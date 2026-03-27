@@ -9,6 +9,7 @@ from .suppliers import SupplierFrame
 from .config import ConfigFrame
 from .sales import SalesFrame
 from .clients import ClientsFrame
+from .registro import RegistroVentasFrame
 
 __all__ = [
     "DashboardFrame",
@@ -17,4 +18,5 @@ __all__ = [
     "ConfigFrame",
     "SalesFrame",
     "ClientsFrame",
+    "RegistroVentasFrame",
 ]
