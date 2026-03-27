@@ -9,6 +9,7 @@ from datetime import datetime
 import random
 import os
 import json
+from receipt_builder import build_receipt_html
 
 
 class WholesaleSalesFrame(ttk.Frame):
@@ -1493,9 +1494,10 @@ Presione "PROCESAR VENTA" para finalizar.
                         return
                 
                 elif index == 3:
-                    # Generar recibo
-                    self.receipt_path = self.save_document(
-                        self.receipt_text.get("1.0", tk.END),
+                    # Generar recibo (builder compartido)
+                    receipt_html = self.generate_receipt_html_document()
+                    self.receipt_path = self.save_html_document(
+                        receipt_html,
                         f"Recibo_{self.venta_id}.html"
                     )
                 
@@ -1512,6 +1514,57 @@ Presione "PROCESAR VENTA" para finalizar.
                 self.show_completion()
         
         process_steps()
+
+    def generate_receipt_html_document(self):
+        """Genera HTML de recibo reutilizando builder comun."""
+        cliente = {
+            "nombre": self.cliente_data.get("nombre", ""),
+            "apellido": self.cliente_data.get("apellido", ""),
+            "dni": self.cliente_data.get("dni", ""),
+            "telefono": self.cliente_data.get("telefono", ""),
+            "direccion": self.cliente_data.get("direccion", ""),
+        }
+        items = []
+        for prod_id, data in self.cart.items():
+            items.append(
+                {
+                    "producto_id": prod_id,
+                    "nombre": data["nombre"],
+                    "cantidad": data["cantidad"],
+                    "precio_unitario": data["precio"],
+                    "descuento_porcentaje": data.get("descuento_pct", 0),
+                }
+            )
+
+        return build_receipt_html(
+            venta_id=self.venta_id,
+            fecha=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            total=float(self.total_venta or 0),
+            monto_pagado=float(self.total_venta or 0),
+            vuelto=0.0,
+            items=items,
+            cliente=cliente,
+            mode='letter',
+            number_to_words=self.numero_a_palabras,
+        )
+
+    def save_html_document(self, html_content, filename):
+        """Guarda HTML ya renderizado en la carpeta configurada."""
+        save_path = self.db.get_config("recibo_save_path", "")
+
+        if not save_path or not os.path.isdir(save_path):
+            save_path = os.path.join(os.path.expanduser("~"), "Documentos_Ventas")
+            os.makedirs(save_path, exist_ok=True)
+            self.db.set_config("recibo_save_path", save_path)
+
+        file_path = os.path.join(save_path, filename)
+        try:
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(html_content)
+            return file_path
+        except Exception as e:
+            messagebox.showerror("Error", f"Error al guardar {filename}: {e}")
+            return None
 
     def save_document(self, content, filename):
         """Guarda documento como HTML."""

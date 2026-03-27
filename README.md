@@ -34,6 +34,7 @@ erp_app/
 - Python 3.7 o superior
 - Tkinter (incluido con Python)
 - SQLite3 (incluido con Python)
+- tkcalendar (DatePicker para filtros de fechas)
 
 ## Instalación
 
@@ -61,6 +62,14 @@ mkdir -p erp_app/assets
 ```bash
 cd erp_app
 python main.py
+```
+
+### Dependencias adicionales
+
+Si no está instalado `tkcalendar`, instálalo con:
+
+```bash
+pip install tkcalendar
 ```
 
 ## Credenciales por Defecto
@@ -235,3 +244,6 @@ Para soporte o consultas: [tu-email@ejemplo.com]
 ---
 
 **Desarrollado con ❤️ usando Python y Tkinter**
+
+
+

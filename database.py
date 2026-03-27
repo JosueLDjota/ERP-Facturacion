@@ -9,10 +9,19 @@ from tkinter import messagebox
 
 class DBManager:
     """Maneja la conexión a SQLite y operaciones CRUD/Setup."""
+    METODOS_PAGO_VALIDOS = (
+        "EFECTIVO",
+        "TARJETA",
+        "TRANSFERENCIA",
+        "QR",
+        "CREDITO",
+        "NO_DEFINIDO",
+    )
 
     def __init__(self, db_name="erp_profesional.db"):
         self.conn = sqlite3.connect(db_name)
         self.cursor = self.conn.cursor()
+        self.conn.execute("PRAGMA foreign_keys = ON")
         self.create_tables()
 
     def create_tables(self):
@@ -30,9 +39,15 @@ class DBManager:
                 email TEXT,
                 direccion TEXT,
                 fecha_registro TEXT NOT NULL,
-                activo INTEGER DEFAULT 1
+                activo INTEGER DEFAULT 1,
+                mayorista INTEGER DEFAULT 0
             )
         """
+        )
+        self._ensure_column(
+            "Clientes",
+            "mayorista",
+            "INTEGER DEFAULT 0",
         )
 
         # Tabla de Productos
@@ -131,8 +146,95 @@ class DBManager:
         """
         )
 
+        self.create_ventas_diarias_table()
         self.conn.commit()
         self.insert_initial_data()
+
+    def _ensure_column(self, table_name, column_name, column_definition):
+        """Agrega una columna solo si todavía no existe."""
+        existing_columns = {
+            row[1]
+            for row in self.fetch(f"PRAGMA table_info({table_name})")
+        }
+        if column_name not in existing_columns:
+            self.cursor.execute(
+                f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}"
+            )
+
+    def create_ventas_diarias_table(self):
+        """Crea tabla de ventas diarias y migra historial desde Ventas."""
+
+        self.cursor.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS ventas_diarias (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                monto_total NUMERIC(12,2) NOT NULL CHECK (monto_total >= 0),
+                metodo_pago TEXT NOT NULL CHECK (
+                    metodo_pago IN (
+                        'EFECTIVO',
+                        'TARJETA',
+                        'TRANSFERENCIA',
+                        'QR',
+                        'CREDITO',
+                        'NO_DEFINIDO'
+                    )
+                ),
+                fecha_registro TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+                referencia TEXT NOT NULL UNIQUE,
+                producto_id INTEGER NULL,
+                legacy_venta_id TEXT UNIQUE,
+                FOREIGN KEY (producto_id) REFERENCES Productos(id)
+                    ON UPDATE CASCADE
+                    ON DELETE SET NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_ventas_diarias_fecha
+                ON ventas_diarias(fecha_registro);
+
+            CREATE INDEX IF NOT EXISTS idx_ventas_diarias_producto
+                ON ventas_diarias(producto_id);
+
+            CREATE INDEX IF NOT EXISTS idx_ventas_fecha
+                ON Ventas(fecha);
+
+            CREATE INDEX IF NOT EXISTS idx_ventas_cliente
+                ON Ventas(id_cliente);
+
+            CREATE INDEX IF NOT EXISTS idx_detalle_venta_id
+                ON DetalleVenta(venta_id);
+
+            CREATE INDEX IF NOT EXISTS idx_detalle_producto_id
+                ON DetalleVenta(producto_id);
+
+            INSERT INTO ventas_diarias (
+                monto_total,
+                metodo_pago,
+                fecha_registro,
+                referencia,
+                producto_id,
+                legacy_venta_id
+            )
+            SELECT
+                v.total AS monto_total,
+                'NO_DEFINIDO' AS metodo_pago,
+                COALESCE(v.fecha, CURRENT_TIMESTAMP) AS fecha_registro,
+                'LEG-' || v.id AS referencia,
+                CASE
+                    WHEN COUNT(DISTINCT dv.producto_id) = 1 THEN MIN(dv.producto_id)
+                    ELSE NULL
+                END AS producto_id,
+                v.id AS legacy_venta_id
+            FROM Ventas v
+            LEFT JOIN DetalleVenta dv
+                ON dv.venta_id = v.id
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM ventas_diarias vd
+                WHERE vd.legacy_venta_id = v.id
+            )
+            GROUP BY v.id, v.total, v.fecha;
+            """
+        )
 
     def insert_initial_data(self):
         """Inserta datos iniciales si las tablas están vacías."""
@@ -294,6 +396,300 @@ class DBManager:
             "INSERT OR REPLACE INTO Configuracion (clave, valor) VALUES (?, ?)",
             (clave, valor),
         )
+
+    def create_venta_diaria(self, monto_total, metodo_pago, referencia, producto_id=None):
+        """Inserta una venta diaria y devuelve su ID."""
+        metodo_pago = (metodo_pago or "").strip().upper()
+        if metodo_pago not in self.METODOS_PAGO_VALIDOS:
+            raise ValueError("Metodo de pago no válido.")
+
+        if producto_id in ("", None):
+            producto_id = None
+
+        self.cursor.execute(
+            """
+            INSERT INTO ventas_diarias (monto_total, metodo_pago, referencia, producto_id)
+            VALUES (?, ?, ?, ?)
+            """,
+            (monto_total, metodo_pago, referencia.strip(), producto_id),
+        )
+        self.conn.commit()
+        return self.cursor.lastrowid
+
+    def fetch_ventas_diarias(
+        self, fecha_desde=None, fecha_hasta=None, transaccion_id=None
+    ):
+        """Obtiene ventas diarias con filtros opcionales."""
+        query = """
+            SELECT
+                id,
+                monto_total,
+                metodo_pago,
+                referencia,
+                fecha_registro,
+                producto_id,
+                legacy_venta_id
+            FROM ventas_diarias
+            WHERE 1=1
+        """
+        params = []
+
+        if fecha_desde:
+            query += " AND date(fecha_registro) >= date(?)"
+            params.append(fecha_desde)
+        if fecha_hasta:
+            query += " AND date(fecha_registro) <= date(?)"
+            params.append(fecha_hasta)
+
+        if transaccion_id:
+            token = transaccion_id.strip()
+            if token.isdigit():
+                query += " AND id = ?"
+                params.append(int(token))
+            else:
+                # Permite buscar por referencia/legacy para trazabilidad histórica.
+                query += " AND (referencia = ? OR legacy_venta_id = ?)"
+                params.extend((token, token))
+
+        query += " ORDER BY datetime(fecha_registro) DESC, id DESC"
+        self.cursor.execute(query, params)
+        return self.cursor.fetchall()
+
+    def fetch_filter_options(self):
+        """Obtiene opciones disponibles para filtros de registro POS."""
+        productos = self.fetch(
+            """
+            SELECT p.id, p.nombre
+            FROM Productos p
+            ORDER BY p.nombre
+            """
+        )
+        clientes = self.fetch(
+            """
+            SELECT c.id, (c.nombre || ' ' || c.apellido) AS nombre_completo
+            FROM Clientes c
+            ORDER BY nombre_completo
+            """
+        )
+        return {"productos": productos, "clientes": clientes}
+
+    def fetch_sales_registry(self, filters=None):
+        """Obtiene registros de ventas del POS en modo solo lectura."""
+        filters = filters or {}
+        query = """
+            SELECT
+                v.id,
+                v.fecha,
+                v.total,
+                COALESCE(v.monto_pagado, 0) AS monto_pagado,
+                COALESCE(v.vuelto, 0) AS vuelto,
+                COALESCE((c.nombre || ' ' || c.apellido), 'Cliente General') AS cliente_nombre,
+                GROUP_CONCAT(DISTINCT COALESCE(p.nombre, dv.nombre_producto)) AS productos,
+                COUNT(dv.id) AS lineas
+            FROM Ventas v
+            LEFT JOIN Clientes c
+                ON c.id = v.id_cliente
+            LEFT JOIN DetalleVenta dv
+                ON dv.venta_id = v.id
+            LEFT JOIN Productos p
+                ON p.id = dv.producto_id
+            WHERE 1=1
+        """
+        params = []
+
+        fecha_desde = (filters.get("fecha_desde") or "").strip()
+        fecha_hasta = (filters.get("fecha_hasta") or "").strip()
+        if fecha_desde:
+            query += " AND date(v.fecha) >= date(?)"
+            params.append(fecha_desde)
+        if fecha_hasta:
+            query += " AND date(v.fecha) <= date(?)"
+            params.append(fecha_hasta)
+
+        venta_id = (filters.get("venta_id") or "").strip()
+        if venta_id:
+            query += " AND v.id = ?"
+            params.append(venta_id)
+
+        producto_id = filters.get("producto_id")
+        if producto_id:
+            query += """
+                AND EXISTS (
+                    SELECT 1
+                    FROM DetalleVenta dvf
+                    WHERE dvf.venta_id = v.id
+                      AND dvf.producto_id = ?
+                )
+            """
+            params.append(producto_id)
+
+        cliente_id = filters.get("cliente_id")
+        if cliente_id:
+            query += " AND v.id_cliente = ?"
+            params.append(cliente_id)
+
+        query += """
+            GROUP BY
+                v.id,
+                v.fecha,
+                v.total,
+                v.monto_pagado,
+                v.vuelto,
+                c.nombre,
+                c.apellido
+            ORDER BY datetime(v.fecha) DESC, v.id DESC
+        """
+        self.cursor.execute(query, params)
+        return self.cursor.fetchall()
+
+    def fetch_sale_header(self, venta_id):
+        """Obtiene cabecera de una venta POS para reimpresion."""
+        rows = self.fetch(
+            """
+            SELECT
+                v.id,
+                v.fecha,
+                v.total,
+                COALESCE(v.monto_pagado, 0) AS monto_pagado,
+                COALESCE(v.vuelto, 0) AS vuelto,
+                v.tipo_recibo,
+                c.nombre,
+                c.apellido,
+                c.dni,
+                c.telefono,
+                c.direccion
+            FROM Ventas v
+            LEFT JOIN Clientes c
+                ON c.id = v.id_cliente
+            WHERE v.id = ?
+            LIMIT 1
+            """,
+            (venta_id,),
+        )
+        if not rows:
+            return None
+
+        row = rows[0]
+        return {
+            "venta_id": row[0],
+            "fecha": row[1],
+            "total": float(row[2] or 0),
+            "monto_pagado": float(row[3] or 0),
+            "vuelto": float(row[4] or 0),
+            "tipo_recibo": row[5],
+            "cliente": {
+                "nombre": row[6] or "",
+                "apellido": row[7] or "",
+                "dni": row[8] or "",
+                "telefono": row[9] or "",
+                "direccion": row[10] or "",
+            }
+            if row[6] or row[7] or row[8] or row[9] or row[10]
+            else None,
+        }
+
+    def fetch_sale_items(self, venta_id):
+        """Obtiene detalle de productos de una venta POS."""
+        rows = self.fetch(
+            """
+            SELECT
+                dv.producto_id,
+                COALESCE(p.nombre, dv.nombre_producto) AS nombre_producto,
+                dv.cantidad,
+                dv.precio_unitario,
+                COALESCE(dv.descuento, 0) AS descuento_monto,
+                dv.subtotal
+            FROM DetalleVenta dv
+            LEFT JOIN Productos p
+                ON p.id = dv.producto_id
+            WHERE dv.venta_id = ?
+            ORDER BY dv.id
+            """,
+            (venta_id,),
+        )
+        return [
+            {
+                "producto_id": row[0],
+                "nombre": row[1],
+                "cantidad": float(row[2] or 0),
+                "precio_unitario": float(row[3] or 0),
+                "descuento_monto": float(row[4] or 0),
+                "subtotal": float(row[5] or 0),
+            }
+            for row in rows
+        ]
+
+    def cleanup_legacy_sales_registry(self):
+        """Depura ventas_diarias eliminando solo inconsistencias verificables."""
+        report = {
+            "antes_total": self.fetch("SELECT COUNT(*) FROM ventas_diarias")[0][0],
+            "eliminados_huerfanos_venta": 0,
+            "eliminados_huerfanos_producto": 0,
+            "eliminados_duplicados_legacy": 0,
+            "eliminados_duplicados_referencia": 0,
+        }
+
+        self.cursor.execute(
+            """
+            DELETE FROM ventas_diarias
+            WHERE legacy_venta_id IS NOT NULL
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM Ventas v
+                  WHERE v.id = ventas_diarias.legacy_venta_id
+              )
+            """
+        )
+        report["eliminados_huerfanos_venta"] = self.cursor.rowcount
+
+        self.cursor.execute(
+            """
+            DELETE FROM ventas_diarias
+            WHERE producto_id IS NOT NULL
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM Productos p
+                  WHERE p.id = ventas_diarias.producto_id
+              )
+            """
+        )
+        report["eliminados_huerfanos_producto"] = self.cursor.rowcount
+
+        self.cursor.execute(
+            """
+            DELETE FROM ventas_diarias
+            WHERE legacy_venta_id IS NOT NULL
+              AND id NOT IN (
+                  SELECT MIN(id)
+                  FROM ventas_diarias
+                  WHERE legacy_venta_id IS NOT NULL
+                  GROUP BY legacy_venta_id
+              )
+            """
+        )
+        report["eliminados_duplicados_legacy"] = self.cursor.rowcount
+
+        self.cursor.execute(
+            """
+            DELETE FROM ventas_diarias
+            WHERE id NOT IN (
+                SELECT MIN(id)
+                FROM ventas_diarias
+                GROUP BY referencia
+            )
+            """
+        )
+        report["eliminados_duplicados_referencia"] = self.cursor.rowcount
+
+        self.conn.commit()
+        report["despues_total"] = self.fetch("SELECT COUNT(*) FROM ventas_diarias")[0][0]
+        report["total_eliminados"] = (
+            report["eliminados_huerfanos_venta"]
+            + report["eliminados_huerfanos_producto"]
+            + report["eliminados_duplicados_legacy"]
+            + report["eliminados_duplicados_referencia"]
+        )
+        return report
 
     def fetch(self, query, params=()):
         """Ejecuta una consulta SELECT y retorna los resultados."""
