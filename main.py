@@ -14,6 +14,7 @@ from frames import (
     ConfigFrame,
     SalesFrame,
     ClientsFrame,
+    RegistroVentasFrame,
 )
 # 🔔 Importar notificaciones
 from frames.notificaciones import NotificationManager
@@ -153,6 +154,7 @@ class ERPApp(tk.Tk):
         self.frames = {
             "Dashboard": DashboardFrame,
             "Ventas (POS)": CompuertaFrame,
+            "Registro de Ventas": RegistroVentasFrame,
             "Clientes": ClientsFrame,
             "Productos": ProductFrame,
             "Proveedores": SupplierFrame,
@@ -164,6 +166,7 @@ class ERPApp(tk.Tk):
         nav_buttons = [
             ("Dashboard", "Dashboard"),
             ("Ventas (POS)", "Ventas (POS)"),
+            ("Registro de Ventas", "Registro de Ventas"),
             ("Clientes", "Clientes"),
             ("Productos", "Productos"),
             ("Proveedores", "Proveedores"),
