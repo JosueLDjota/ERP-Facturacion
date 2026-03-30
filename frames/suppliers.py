@@ -1,188 +1,183 @@
 """
 frames/suppliers.py
-Gestión completa de proveedores con CRUD
+Gestión de proveedores con CRUD.
 """
-from tkinter import ttk, messagebox
+
 import tkinter as tk
+from tkinter import messagebox, ttk
 
 
 class SupplierFrame(ttk.Frame):
     """Frame para gestión de proveedores."""
-    
+
     def __init__(self, parent, app):
-        super().__init__(parent, padding="10")
+        super().__init__(parent, padding=10)
         self.app = app
         self.db = app.db
-        
-        self.grid_columnconfigure(0, weight=2)
-        self.grid_columnconfigure(1, weight=1)
-        self.grid_rowconfigure(0, weight=1)
-        
-        self.list_frame = ttk.Frame(self, padding="10", relief="groove")
-        self.list_frame.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
-        
-        self.form_frame = ttk.Frame(self, padding="10", relief="groove")
-        self.form_frame.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
-        
-        self.create_supplier_list()
-        self.create_supplier_form()
-        self.load_suppliers()
 
-    def create_supplier_list(self):
-        """Crea la lista de proveedores."""
-        ttk.Label(
-            self.list_frame, 
-            text="Listado de Proveedores", 
-            font=('Arial', 14, 'bold')
-        ).pack(pady=(0, 10))
-        
-        # Treeview
-        self.tree = ttk.Treeview(
-            self.list_frame,
-            columns=("ID", "Nombre", "Contacto", "Teléfono"),
-            show="headings",
-            height=15
-        )
-        
-        self.tree.heading("ID", text="ID")
-        self.tree.heading("Nombre", text="Nombre Proveedor")
-        self.tree.heading("Contacto", text="Persona de Contacto")
-        self.tree.heading("Teléfono", text="Teléfono")
-        
-        self.tree.column("ID", width=50, anchor="center")
-        self.tree.column("Nombre", width=200)
-        self.tree.column("Contacto", width=150)
-        self.tree.column("Teléfono", width=120)
-        
-        self.tree.bind('<<TreeviewSelect>>', self.select_supplier)
-        self.tree.pack(fill="both", expand=True, pady=5)
-        
-        # Botones
-        btn_frame = ttk.Frame(self.list_frame)
-        btn_frame.pack(fill="x", pady=10)
-        
-        ttk.Button(
-            btn_frame, 
-            text="Nuevo Proveedor", 
-            command=self.reset_form
-        ).pack(side="left", padx=5)
-        
-        ttk.Button(
-            btn_frame, 
-            text="Eliminar", 
-            command=self.delete_supplier
-        ).pack(side="left", padx=5)
-        
-        ttk.Button(
-            btn_frame, 
-            text="Exportar CSV", 
-            command=lambda: self.app.file_manager.export_data("Proveedores")
-        ).pack(side="right", padx=5)
-
-    def create_supplier_form(self):
-        """Crea el formulario de proveedor."""
-        ttk.Label(
-            self.form_frame, 
-            text="Formulario de Proveedor", 
-            font=('Arial', 14, 'bold')
-        ).grid(row=0, column=0, columnspan=2, pady=(0, 20))
-        
-        # Variables
         self.sup_id = tk.StringVar(value="")
         self.nombre = tk.StringVar()
         self.contacto = tk.StringVar()
         self.telefono = tk.StringVar()
-        
-        # Campos
+
+        self._build_ui()
+        self.load_suppliers()
+
+    def _build_ui(self):
+        self.columnconfigure(0, weight=7)
+        self.columnconfigure(1, weight=4)
+        self.rowconfigure(1, weight=1)
+
+        ttk.Label(self, text="Gestión de proveedores", style="Header.TLabel").grid(
+            row=0, column=0, columnspan=2, sticky="w", pady=(0, 12)
+        )
+
+        self.list_frame = ttk.LabelFrame(self, text="Listado de proveedores", style="Card.TLabelframe")
+        self.list_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 8))
+        self.list_frame.columnconfigure(0, weight=1)
+        self.list_frame.rowconfigure(0, weight=1)
+
+        self.form_frame = ttk.LabelFrame(self, text="Formulario de proveedor", style="Card.TLabelframe")
+        self.form_frame.grid(row=1, column=1, sticky="nsew")
+        self.form_frame.columnconfigure(1, weight=1)
+
+        self._create_supplier_list()
+        self._create_supplier_form()
+
+    def _parent(self):
+        return self.winfo_toplevel()
+
+    def _show_info(self, title, text):
+        messagebox.showinfo(title, text, parent=self._parent())
+
+    def _show_error(self, title, text):
+        messagebox.showerror(title, text, parent=self._parent())
+
+    def _show_warning(self, title, text):
+        messagebox.showwarning(title, text, parent=self._parent())
+
+    def _ask_yes_no(self, title, text):
+        return messagebox.askyesno(title, text, parent=self._parent())
+
+    def _create_supplier_list(self):
+        self.tree = ttk.Treeview(
+            self.list_frame,
+            columns=("ID", "Nombre", "Contacto", "Teléfono"),
+            show="headings",
+            height=15,
+        )
+        self.tree.grid(row=0, column=0, sticky="nsew", pady=(0, 8))
+
+        for col, width, anchor in (
+            ("ID", 60, "center"),
+            ("Nombre", 260, "w"),
+            ("Contacto", 220, "w"),
+            ("Teléfono", 140, "center"),
+        ):
+            self.tree.heading(col, text=col)
+            self.tree.column(col, width=width, anchor=anchor)
+
+        y_scroll = ttk.Scrollbar(self.list_frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=y_scroll.set)
+        y_scroll.grid(row=0, column=1, sticky="ns")
+        self.tree.bind("<<TreeviewSelect>>", self.select_supplier)
+
+        btn_frame = ttk.Frame(self.list_frame, style="Surface.TFrame")
+        btn_frame.grid(row=1, column=0, sticky="ew", pady=(6, 0))
+
+        ttk.Button(btn_frame, text="Nuevo proveedor", style="Secondary.TButton", command=self.reset_form).pack(
+            side="left", padx=(0, 6)
+        )
+        ttk.Button(btn_frame, text="Eliminar", style="Danger.TButton", command=self.delete_supplier).pack(
+            side="left", padx=6
+        )
+        ttk.Button(
+            btn_frame,
+            text="Exportar CSV",
+            style="Primary.TButton",
+            command=lambda: self.app.file_manager.export_data("Proveedores"),
+        ).pack(side="right")
+
+    def _create_supplier_form(self):
         fields = [
-            ("Nombre Empresa:", self.nombre),
-            ("Persona Contacto:", self.contacto),
-            ("Teléfono:", self.telefono)
+            ("Nombre empresa:", self.nombre),
+            ("Persona contacto:", self.contacto),
+            ("Teléfono:", self.telefono),
         ]
-        
-        row = 1
+
+        row = 0
         for label_text, var in fields:
-            ttk.Label(self.form_frame, text=label_text).grid(
-                row=row, column=0, sticky="w", padx=5, pady=8
+            ttk.Label(self.form_frame, text=label_text, style="FormLabel.TLabel").grid(
+                row=row, column=0, sticky="w", padx=4, pady=8
             )
-            ttk.Entry(self.form_frame, textvariable=var, width=30).grid(
-                row=row, column=1, sticky="ew", padx=5, pady=8
+            ttk.Entry(self.form_frame, textvariable=var).grid(
+                row=row, column=1, sticky="ew", padx=4, pady=8
             )
             row += 1
-        
-        # Botón guardar
+
         ttk.Button(
-            self.form_frame, 
-            text="Guardar Proveedor", 
-            command=self.save_supplier
-        ).grid(row=row, column=0, columnspan=2, pady=20, sticky="ew")
+            self.form_frame,
+            text="Guardar proveedor",
+            style="Primary.TButton",
+            command=self.save_supplier,
+        ).grid(row=row, column=0, columnspan=2, sticky="ew", pady=(14, 4))
 
     def load_suppliers(self):
-        """Carga todos los proveedores."""
-        for item in self.tree.get_children():
-            self.tree.delete(item)
-        
-        suppliers = self.db.fetch(
-            "SELECT id, nombre, contacto, telefono FROM Proveedores ORDER BY id DESC"
-        )
-        
+        self.tree.delete(*self.tree.get_children())
+        suppliers = self.db.fetch("SELECT id, nombre, contacto, telefono FROM Proveedores ORDER BY id DESC")
         for sup in suppliers:
             self.tree.insert("", "end", values=sup)
 
-    def select_supplier(self, event):
-        """Carga datos del proveedor seleccionado."""
+    def select_supplier(self, _event):
         selected_item = self.tree.focus()
         if not selected_item:
             return
-        
-        values = self.tree.item(selected_item, 'values')
+        values = self.tree.item(selected_item, "values")
         self.sup_id.set(values[0])
         self.nombre.set(values[1])
         self.contacto.set(values[2])
         self.telefono.set(values[3])
 
     def reset_form(self):
-        """Limpia el formulario."""
         self.sup_id.set("")
         self.nombre.set("")
         self.contacto.set("")
         self.telefono.set("")
 
     def save_supplier(self):
-        """Guarda o actualiza un proveedor."""
-        nombre = self.nombre.get()
-        contacto = self.contacto.get()
-        telefono = self.telefono.get()
-        
+        nombre = self.nombre.get().strip()
+        contacto = self.contacto.get().strip()
+        telefono = self.telefono.get().strip()
+
         if not nombre:
-            messagebox.showerror("Error", "El nombre es obligatorio.")
+            self._show_error("Error", "El nombre es obligatorio.")
             return
-        
+
         if self.sup_id.get():
-            # Actualizar
-            query = "UPDATE Proveedores SET nombre=?, contacto=?, telefono=? WHERE id=?"
-            self.db.execute(query, (nombre, contacto, telefono, self.sup_id.get()))
-            messagebox.showinfo("Éxito", "Proveedor actualizado.")
+            self.db.execute(
+                "UPDATE Proveedores SET nombre=?, contacto=?, telefono=? WHERE id=?",
+                (nombre, contacto, telefono, self.sup_id.get()),
+            )
+            self._show_info("Éxito", "Proveedor actualizado.")
         else:
-            # Insertar
-            query = "INSERT INTO Proveedores (nombre, contacto, telefono) VALUES (?, ?, ?)"
-            self.db.execute(query, (nombre, contacto, telefono))
-            messagebox.showinfo("Éxito", "Proveedor agregado.")
-        
+            self.db.execute(
+                "INSERT INTO Proveedores (nombre, contacto, telefono) VALUES (?, ?, ?)",
+                (nombre, contacto, telefono),
+            )
+            self._show_info("Éxito", "Proveedor agregado.")
+
         self.load_suppliers()
         self.reset_form()
 
     def delete_supplier(self):
-        """Elimina el proveedor seleccionado."""
         selected_item = self.tree.focus()
         if not selected_item:
-            messagebox.showwarning("Advertencia", "Seleccione un proveedor primero.")
+            self._show_warning("Advertencia", "Seleccione un proveedor primero.")
             return
-        
-        sup_id = self.tree.item(selected_item, 'values')[0]
-        
-        if messagebox.askyesno("Confirmar", f"¿Eliminar el proveedor ID {sup_id}?"):
+
+        sup_id = self.tree.item(selected_item, "values")[0]
+        if self._ask_yes_no("Confirmar", f"¿Eliminar el proveedor ID {sup_id}?"):
             self.db.execute("DELETE FROM Proveedores WHERE id = ?", (sup_id,))
-            messagebox.showinfo("Éxito", "Proveedor eliminado.")
+            self._show_info("Éxito", "Proveedor eliminado.")
             self.load_suppliers()
             self.reset_form()
