@@ -9,27 +9,61 @@ from tkinter import ttk
 
 
 PALETTE = {
-    "blue_dark": "#123A6B",
-    "blue_primary": "#1F5EA8",
-    "blue_light": "#DDEBFF",
-    "blue_soft": "#EDF4FF",
+    "blue_dark": "#1E2A44",
+    "blue_primary": "#1D4ED8",
+    "blue_light": "#DBEAFE",
+    "blue_soft": "#F4F7FC",
     "white": "#FFFFFF",
-    "black": "#111827",
-    "gray_text": "#4B5563",
-    "gray_border": "#D0D7E2",
-    "danger": "#B42318",
-    "success": "#067647",
+    "black": "#0F172A",
+    "gray_text": "#475569",
+    "gray_border": "#D5DEE9",
+    "danger": "#B91C1C",
+    "success": "#0F766E",
+    "surface_alt": "#EEF3FA",
+    "sidebar_bg": "#0F1D36",
+    "sidebar_text": "#E5EDF9",
 }
 
 FONTS = {
     "family": "Segoe UI",
     "base": ("Segoe UI", 10),
-    "body": ("Segoe UI", 11),
-    "title": ("Segoe UI", 22, "bold"),
-    "header": ("Segoe UI", 17, "bold"),
-    "subheader": ("Segoe UI", 13, "bold"),
+    "body": ("Segoe UI", 10),
+    "title": ("Segoe UI Semibold", 24),
+    "header": ("Segoe UI Semibold", 18),
+    "subheader": ("Segoe UI Semibold", 12),
     "small": ("Segoe UI", 9),
 }
+
+HNL_PREFIX = "L"
+
+
+def normalize_hnl_amount(value) -> float:
+    """Normaliza montos a float con 2 decimales para HNL."""
+    try:
+        number = float(value or 0)
+    except (TypeError, ValueError):
+        number = 0.0
+    return round(number, 2)
+
+
+def parse_hnl(value, default: float = 0.0) -> float:
+    """Convierte texto con simbolos/espacios en monto float."""
+    if value is None:
+        return default
+    cleaned = str(value).strip().upper()
+    cleaned = cleaned.replace("HNL", "").replace(HNL_PREFIX, "").replace(",", "")
+    if not cleaned:
+        return default
+    try:
+        return float(cleaned)
+    except ValueError:
+        return default
+
+
+def format_hnl(value) -> str:
+    """Formatea montos en Lempiras."""
+    amount = normalize_hnl_amount(value)
+    return f"{HNL_PREFIX} {amount:,.2f}"
 
 
 def project_root() -> Path:
@@ -66,12 +100,27 @@ def apply_app_theme(root):
     style.configure("TFrame", background=PALETTE["blue_soft"])
     style.configure("App.TFrame", background=PALETTE["blue_soft"])
     style.configure("Surface.TFrame", background=PALETTE["white"])
+    style.configure("AltSurface.TFrame", background=PALETTE["surface_alt"])
+    style.configure("Topbar.TFrame", background=PALETTE["white"])
+    style.configure("Sidebar.TFrame", background=PALETTE["sidebar_bg"])
 
+    style.configure(
+        "TLabel",
+        background=PALETTE["blue_soft"],
+        foreground=PALETTE["black"],
+        font=FONTS["body"],
+    )
     style.configure(
         "Header.TLabel",
         background=PALETTE["blue_soft"],
-        foreground=PALETTE["blue_dark"],
+        foreground=PALETTE["black"],
         font=FONTS["header"],
+    )
+    style.configure(
+        "Title.TLabel",
+        background=PALETTE["blue_soft"],
+        foreground=PALETTE["black"],
+        font=FONTS["title"],
     )
     style.configure(
         "Subheader.TLabel",
@@ -91,12 +140,35 @@ def apply_app_theme(root):
         foreground=PALETTE["black"],
         font=FONTS["body"],
     )
-
     style.configure(
-        "TLabel",
-        background=PALETTE["blue_soft"],
+        "SidebarTitle.TLabel",
+        background=PALETTE["sidebar_bg"],
+        foreground=PALETTE["white"],
+        font=FONTS["subheader"],
+    )
+    style.configure(
+        "SidebarText.TLabel",
+        background=PALETTE["sidebar_bg"],
+        foreground=PALETTE["sidebar_text"],
+        font=FONTS["small"],
+    )
+    style.configure(
+        "IntroTitle.TLabel",
+        background=PALETTE["surface_alt"],
+        foreground=PALETTE["black"],
+        font=FONTS["title"],
+    )
+    style.configure(
+        "IntroBody.TLabel",
+        background=PALETTE["surface_alt"],
         foreground=PALETTE["black"],
         font=FONTS["body"],
+    )
+    style.configure(
+        "IntroMuted.TLabel",
+        background=PALETTE["surface_alt"],
+        foreground=PALETTE["gray_text"],
+        font=FONTS["small"],
     )
 
     style.configure(
@@ -105,7 +177,7 @@ def apply_app_theme(root):
         bordercolor=PALETTE["gray_border"],
         relief="solid",
         borderwidth=1,
-        padding=12,
+        padding=14,
     )
     style.configure(
         "Card.TLabelframe.Label",
@@ -119,89 +191,99 @@ def apply_app_theme(root):
         fieldbackground=PALETTE["white"],
         foreground=PALETTE["black"],
         bordercolor=PALETTE["gray_border"],
-        lightcolor=PALETTE["blue_light"],
+        lightcolor=PALETTE["gray_border"],
         darkcolor=PALETTE["gray_border"],
         insertcolor=PALETTE["black"],
         padding=8,
     )
-    style.map("TEntry", bordercolor=[("focus", PALETTE["blue_primary"])])
+    style.map(
+        "TEntry",
+        bordercolor=[("focus", PALETTE["blue_primary"])],
+        lightcolor=[("focus", PALETTE["blue_primary"])],
+        darkcolor=[("focus", PALETTE["blue_primary"])],
+    )
 
     style.configure(
         "TCombobox",
         fieldbackground=PALETTE["white"],
         foreground=PALETTE["black"],
         bordercolor=PALETTE["gray_border"],
-        lightcolor=PALETTE["blue_light"],
+        lightcolor=PALETTE["gray_border"],
         darkcolor=PALETTE["gray_border"],
         padding=7,
     )
-    style.map("TCombobox", bordercolor=[("focus", PALETTE["blue_primary"])])
+    style.map(
+        "TCombobox",
+        bordercolor=[("focus", PALETTE["blue_primary"])],
+        lightcolor=[("focus", PALETTE["blue_primary"])],
+        darkcolor=[("focus", PALETTE["blue_primary"])],
+    )
 
     style.configure(
         "Primary.TButton",
-        font=("Segoe UI", 10, "bold"),
-        padding=(14, 8),
+        font=("Segoe UI Semibold", 10),
+        padding=(14, 9),
         relief="flat",
         borderwidth=0,
         background=PALETTE["blue_primary"],
         foreground=PALETTE["white"],
     )
-    style.map("Primary.TButton", background=[("active", PALETTE["blue_dark"])])
+    style.map("Primary.TButton", background=[("active", "#1E40AF")])
 
     style.configure(
         "Secondary.TButton",
-        font=("Segoe UI", 10, "bold"),
-        padding=(14, 8),
+        font=("Segoe UI Semibold", 10),
+        padding=(14, 9),
         relief="flat",
         borderwidth=0,
-        background=PALETTE["blue_light"],
+        background=PALETTE["surface_alt"],
         foreground=PALETTE["blue_dark"],
     )
-    style.map("Secondary.TButton", background=[("active", "#C9DFFF")])
+    style.map("Secondary.TButton", background=[("active", "#E2E8F0")])
 
     style.configure(
         "Danger.TButton",
-        font=("Segoe UI", 10, "bold"),
-        padding=(14, 8),
+        font=("Segoe UI Semibold", 10),
+        padding=(14, 9),
         relief="flat",
         borderwidth=0,
         background=PALETTE["danger"],
         foreground=PALETTE["white"],
     )
-    style.map("Danger.TButton", background=[("active", "#8F1C13")])
+    style.map("Danger.TButton", background=[("active", "#991B1B")])
 
     style.configure(
         "Success.TButton",
-        font=("Segoe UI", 10, "bold"),
-        padding=(14, 8),
+        font=("Segoe UI Semibold", 10),
+        padding=(14, 9),
         relief="flat",
         borderwidth=0,
         background=PALETTE["success"],
         foreground=PALETTE["white"],
     )
-    style.map("Success.TButton", background=[("active", "#055A3B")])
+    style.map("Success.TButton", background=[("active", "#115E59")])
 
     style.configure(
         "Nav.TButton",
-        font=("Segoe UI", 10, "bold"),
+        font=("Segoe UI Semibold", 10),
         padding=(12, 10),
         relief="flat",
         borderwidth=0,
-        background=PALETTE["blue_soft"],
-        foreground=PALETTE["blue_dark"],
+        background=PALETTE["sidebar_bg"],
+        foreground=PALETTE["sidebar_text"],
     )
-    style.map("Nav.TButton", background=[("active", PALETTE["blue_light"])])
+    style.map("Nav.TButton", background=[("active", "#1E3358")], foreground=[("active", PALETTE["white"])])
 
     style.configure(
         "NavAccent.TButton",
-        font=("Segoe UI", 10, "bold"),
+        font=("Segoe UI Semibold", 10),
         padding=(12, 10),
         relief="flat",
         borderwidth=0,
         background=PALETTE["blue_primary"],
         foreground=PALETTE["white"],
     )
-    style.map("NavAccent.TButton", background=[("active", PALETTE["blue_dark"])])
+    style.map("NavAccent.TButton", background=[("active", "#1E40AF")])
 
     style.configure(
         "Treeview",
@@ -213,18 +295,18 @@ def apply_app_theme(root):
     )
     style.configure(
         "Treeview.Heading",
-        font=("Segoe UI", 10, "bold"),
-        background=PALETTE["blue_light"],
+        font=("Segoe UI Semibold", 10),
+        background=PALETTE["surface_alt"],
         foreground=PALETTE["blue_dark"],
         relief="flat",
     )
-    style.map("Treeview", background=[("selected", "#CDE0FF")], foreground=[("selected", PALETTE["black"])])
+    style.map("Treeview", background=[("selected", "#DBEAFE")], foreground=[("selected", PALETTE["black"])])
 
     style.configure("TNotebook", background=PALETTE["blue_soft"], borderwidth=0)
-    style.configure("TNotebook.Tab", font=("Segoe UI", 10, "bold"), padding=(12, 7))
+    style.configure("TNotebook.Tab", font=("Segoe UI Semibold", 10), padding=(14, 8))
     style.map(
         "TNotebook.Tab",
-        background=[("selected", PALETTE["white"]), ("!selected", PALETTE["blue_light"])],
+        background=[("selected", PALETTE["white"]), ("!selected", PALETTE["surface_alt"])],
         foreground=[("selected", PALETTE["blue_dark"]), ("!selected", PALETTE["gray_text"])],
     )
 

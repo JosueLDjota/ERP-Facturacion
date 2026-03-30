@@ -6,6 +6,7 @@ Gestor de importación y exportación de datos CSV.
 import csv
 import tkinter as tk
 from tkinter import Toplevel, filedialog, messagebox, ttk
+from frames.ui import format_hnl, normalize_hnl_amount, parse_hnl
 
 def center_window(window, width, height, parent=None):
     window.update_idletasks()
@@ -92,7 +93,7 @@ class FileManager:
                             (
                                 row[1],  # nombre
                                 row[2],  # descripcion
-                                float(row[3]),  # precio
+                                normalize_hnl_amount(parse_hnl(row[3])),  # precio HNL
                                 int(row[4]),  # stock
                                 int(row[5]) if len(row) > 5 else 1,  # proveedor_id
                             )
@@ -147,7 +148,7 @@ class FileManager:
                 "",
                 "end",
                 iid=i,
-                values=(nombre, f"${precio:.2f}", stock, prov_id),
+                values=(nombre, format_hnl(precio), stock, prov_id),
                 tags=(nombre, desc, precio, stock, prov_id),
             )
 
@@ -175,15 +176,15 @@ class FileManager:
                     new_data = (
                         vars_list[0].get(),
                         vars_list[1].get(),
-                        float(vars_list[2].get()),
+                        normalize_hnl_amount(parse_hnl(vars_list[2].get())),
                         int(vars_list[3].get()),
                         int(vars_list[4].get()),
                     )
                     tree.item(selected, tags=new_data)
-                    tree.item(selected, values=(new_data[0], f"${new_data[2]:.2f}", new_data[3], new_data[4]))
+                    tree.item(selected, values=(new_data[0], format_hnl(new_data[2]), new_data[3], new_data[4]))
                     edit_win.destroy()
                 except ValueError:
-                    messagebox.showerror("Error", "Precio, stock y proveedor deben ser números.")
+                    messagebox.showerror("Error", "Precio HNL, stock y proveedor deben ser numeros.")
 
             ttk.Button(edit_win, text="Guardar", command=save_changes).grid(
                 row=len(fields), column=0, columnspan=2, pady=14

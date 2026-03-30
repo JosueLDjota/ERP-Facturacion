@@ -1,343 +1,341 @@
-# frames/dashboard.py
 """
-Dashboard profesional moderno con múltiples KPIs, gráficas con scroll y alertas animadas.
-Estilo Microsoft Dynamics.
+frames/dashboard.py
+Dashboard ejecutivo con KPIs y graficas de negocio.
 """
+
 import tkinter as tk
 from tkinter import ttk
-import threading
-import time
+
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
+from matplotlib.ticker import FuncFormatter
+
+from .ui import PALETTE, format_hnl
+
 
 class DashboardFrame(ttk.Frame):
-    """Dashboard profesional con KPIs, alertas y gráficas modernas."""
+    """Dashboard con resumen financiero, tendencia y alertas de inventario."""
+
+    MONTH_LABELS = {
+        "01": "Ene",
+        "02": "Feb",
+        "03": "Mar",
+        "04": "Abr",
+        "05": "May",
+        "06": "Jun",
+        "07": "Jul",
+        "08": "Ago",
+        "09": "Sep",
+        "10": "Oct",
+        "11": "Nov",
+        "12": "Dic",
+    }
 
     def __init__(self, parent, app):
-        super().__init__(parent, padding=10)
+        super().__init__(parent, padding=0, style="App.TFrame")
         self.app = app
         self.db = app.db
 
-# ------------------ Canvas principal ------------------
-        self.canvas = tk.Canvas(self, bg="#f0f2f5")
-        self.v_scroll = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
-        self.h_scroll = ttk.Scrollbar(self, orient="horizontal", command=self.canvas.xview)
+        self.total_sales = 0.0
+        self.daily_sales = 0.0
+        self.monthly_sales = 0.0
+        self.low_stock = []
+        self.best_seller = ("N/A", 0)
+        self.total_products = 0
+        self.ventas_por_mes = []
+        self.ventas_por_dia = []
 
-        self.scrollable_frame = ttk.Frame(self.canvas)
+        self.month_canvas = None
+        self.daily_canvas = None
 
-# Vincular tamaño del frame al canvas
-        self.scrollable_frame.bind(
-           "<Configure>",
-           lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        self._configure_styles()
+        self._build_layout()
+        self.refresh_dashboard()
+
+    def destroy(self):
+        if hasattr(self, "scroll_canvas"):
+            self.scroll_canvas.unbind_all("<MouseWheel>")
+        super().destroy()
+
+    def _configure_styles(self):
+        style = ttk.Style()
+        style.configure(
+            "DashCard.TFrame",
+            background=PALETTE["white"],
+            borderwidth=1,
+            relief="solid",
+            bordercolor=PALETTE["gray_border"],
+        )
+        style.configure(
+            "DashCardTitle.TLabel",
+            background=PALETTE["white"],
+            foreground=PALETTE["gray_text"],
+            font=("Segoe UI", 10),
+        )
+        style.configure(
+            "DashCardValue.TLabel",
+            background=PALETTE["white"],
+            foreground=PALETTE["black"],
+            font=("Segoe UI Semibold", 20),
+        )
+        style.configure(
+            "DashCardNote.TLabel",
+            background=PALETTE["white"],
+            foreground=PALETTE["gray_text"],
+            font=("Segoe UI", 10),
+        )
+        style.configure(
+            "DashPanel.TLabelframe",
+            background=PALETTE["white"],
+            borderwidth=1,
+            relief="solid",
+            bordercolor=PALETTE["gray_border"],
+            padding=12,
+        )
+        style.configure(
+            "DashPanel.TLabelframe.Label",
+            background=PALETTE["white"],
+            foreground=PALETTE["blue_dark"],
+            font=("Segoe UI Semibold", 12),
         )
 
-        self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
-        self.canvas.configure(yscrollcommand=self.v_scroll.set, xscrollcommand=self.h_scroll.set)
+    def _build_layout(self):
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(0, weight=1)
 
-# Empaquetar todo
-        self.canvas.pack(side="top", fill="both", expand=True)
-        self.v_scroll.pack(side="right", fill="y")
-        self.h_scroll.pack(side="bottom", fill="x")
+        self.scroll_canvas = tk.Canvas(self, highlightthickness=0, bg=PALETTE["blue_soft"])
+        self.scroll_canvas.grid(row=0, column=0, sticky="nsew")
 
-        # Empaquetar
-        self.canvas.pack(side="top", fill="both", expand=True)
-        self.v_scroll.pack(side="right", fill="y")
-        self.h_scroll.pack(side="bottom", fill="x")
+        y_scroll = ttk.Scrollbar(self, orient="vertical", command=self.scroll_canvas.yview)
+        y_scroll.grid(row=0, column=1, sticky="ns")
+        self.scroll_canvas.configure(yscrollcommand=y_scroll.set)
 
-# -------------------- Scroll con rueda del mouse --------------------
-      # -------------------- Scroll con rueda del mouse --------------------
-        def _on_mousewheel(event):
-            try:
-                if self.canvas and self.canvas.winfo_exists():
-                    self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-            except Exception:
-                # Ignora si el canvas fue destruido o ya no existe
-                pass
+        self.content = ttk.Frame(self.scroll_canvas, padding=12, style="App.TFrame")
+        self._scroll_window_id = self.scroll_canvas.create_window((0, 0), window=self.content, anchor="nw")
 
-        def _on_shift_mousewheel(event):
-            try:
-                if self.canvas and self.canvas.winfo_exists():
-                    self.canvas.xview_scroll(int(-1 * (event.delta / 120)), "units")
-            except Exception:
-                pass
+        self.content.bind(
+            "<Configure>",
+            lambda _event: self.scroll_canvas.configure(scrollregion=self.scroll_canvas.bbox("all")),
+        )
+        self.scroll_canvas.bind("<Configure>", self._on_canvas_resize)
+        self.scroll_canvas.bind("<Enter>", self._bind_mousewheel)
+        self.scroll_canvas.bind("<Leave>", self._unbind_mousewheel)
 
-        # Vincular eventos
-        self.canvas.bind_all("<MouseWheel>", _on_mousewheel)  # Windows / Mac
-        self.canvas.bind_all("<Shift-MouseWheel>", _on_shift_mousewheel)  # Shift + rueda para horizontal
+        self.content.columnconfigure(0, weight=1)
+        self.content.rowconfigure(2, weight=1)
 
+        header = ttk.Frame(self.content, style="App.TFrame")
+        header.grid(row=0, column=0, sticky="ew", pady=(0, 12))
+        header.columnconfigure(0, weight=1)
 
-        # ------------------ Datos ------------------
-        self.load_data()
-        self.render_dashboard()
+        ttk.Label(header, text="Resumen operativo", style="Header.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            header,
+            text="Indicadores de ventas, inventario y tendencia para decisiones rapidas.",
+            style="Muted.TLabel",
+        ).grid(row=1, column=0, sticky="w", pady=(2, 0))
+        ttk.Button(header, text="Actualizar", style="Primary.TButton", command=self.refresh_dashboard).grid(
+            row=0, column=1, rowspan=2, sticky="e"
+        )
 
-    # -------------------- Cargar datos --------------------
-    def load_data(self):
-        """Carga los datos desde la base de datos."""
-        self.total_sales = self.db.fetch("SELECT SUM(total) FROM Ventas")[0][0] or 0
-        self.daily_sales = self.db.fetch("SELECT SUM(total) FROM Ventas WHERE DATE(fecha)=DATE('now')")[0][0] or 0
-        self.monthly_sales = self.db.fetch("SELECT SUM(total) FROM Ventas WHERE strftime('%m', fecha)=strftime('%m','now')")[0][0] or 0
+        self.kpi_row = ttk.Frame(self.content, style="App.TFrame")
+        self.kpi_row.grid(row=1, column=0, sticky="ew", pady=(0, 12))
+        for col in range(2):
+            self.kpi_row.columnconfigure(col, weight=1)
+
+        self.panels = ttk.Frame(self.content, style="App.TFrame")
+        self.panels.grid(row=2, column=0, sticky="nsew")
+        self.panels.columnconfigure(0, weight=5)
+        self.panels.columnconfigure(1, weight=3)
+        self.panels.rowconfigure(0, weight=1)
+        self.panels.rowconfigure(1, weight=1)
+
+        self.month_chart_frame = ttk.LabelFrame(self.panels, text="Ventas mensuales (12 meses)", style="DashPanel.TLabelframe")
+        self.month_chart_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 10), pady=(0, 10))
+
+        self.daily_chart_frame = ttk.LabelFrame(self.panels, text="Ventas del mes por dia", style="DashPanel.TLabelframe")
+        self.daily_chart_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 10))
+
+        self.stock_panel = ttk.LabelFrame(self.panels, text="Alertas de stock bajo", style="DashPanel.TLabelframe")
+        self.stock_panel.grid(row=0, column=1, rowspan=2, sticky="nsew")
+        self.stock_panel.columnconfigure(0, weight=1)
+        self.stock_panel.rowconfigure(1, weight=1)
+
+        self.stock_count_var = tk.StringVar(value="0 productos en alerta")
+        ttk.Label(self.stock_panel, textvariable=self.stock_count_var, style="Muted.TLabel").grid(
+            row=0, column=0, sticky="w", pady=(0, 8)
+        )
+
+        stock_table_host = ttk.Frame(self.stock_panel, style="Surface.TFrame")
+        stock_table_host.grid(row=1, column=0, sticky="nsew")
+        stock_table_host.columnconfigure(0, weight=1)
+        stock_table_host.rowconfigure(0, weight=1)
+
+        self.stock_tree = ttk.Treeview(stock_table_host, columns=("Producto", "Stock"), show="headings", height=18)
+        self.stock_tree.heading("Producto", text="Producto")
+        self.stock_tree.heading("Stock", text="Stock")
+        self.stock_tree.column("Producto", width=340, anchor="w")
+        self.stock_tree.column("Stock", width=110, anchor="center")
+
+        stock_scroll = ttk.Scrollbar(stock_table_host, orient="vertical", command=self.stock_tree.yview)
+        self.stock_tree.configure(yscrollcommand=stock_scroll.set)
+
+        self.stock_tree.grid(row=0, column=0, sticky="nsew")
+        stock_scroll.grid(row=0, column=1, sticky="ns")
+
+    def _bind_mousewheel(self, _event=None):
+        self.scroll_canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+
+    def _unbind_mousewheel(self, _event=None):
+        self.scroll_canvas.unbind_all("<MouseWheel>")
+
+    def _on_mousewheel(self, event):
+        self.scroll_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+    def _on_canvas_resize(self, event):
+        self.scroll_canvas.itemconfig(self._scroll_window_id, width=event.width)
+
+    def _render_kpis(self):
+        for widget in self.kpi_row.winfo_children():
+            widget.destroy()
+
+        cards = [
+            ("Ventas totales", format_hnl(self.total_sales), "Historico acumulado", PALETTE["blue_primary"]),
+            ("Ventas del mes", format_hnl(self.monthly_sales), "Rendimiento mensual", PALETTE["success"]),
+            ("Ventas del dia", format_hnl(self.daily_sales), "Operacion actual", "#B45309"),
+            ("Producto mas vendido", str(self.best_seller[0]), f"{int(self.best_seller[1])} unidades", PALETTE["blue_dark"]),
+            ("Total de productos", f"{self.total_products}", "Inventario registrado", PALETTE["blue_primary"]),
+            ("Stock bajo", f"{len(self.low_stock)}", "Productos <= 10 unidades", PALETTE["danger"]),
+        ]
+
+        for idx, (title, value, note, color) in enumerate(cards):
+            row = idx // 2
+            col = idx % 2
+            card = ttk.Frame(self.kpi_row, style="DashCard.TFrame", padding=14)
+            card.grid(row=row, column=col, sticky="nsew", padx=6, pady=6)
+
+            ttk.Label(card, text=title, style="DashCardTitle.TLabel").pack(anchor="w")
+            value_label = ttk.Label(card, text=value, style="DashCardValue.TLabel")
+            value_label.pack(anchor="w", pady=(8, 3))
+            value_label.configure(foreground=color)
+            ttk.Label(card, text=note, style="DashCardNote.TLabel").pack(anchor="w")
+
+    def _draw_month_chart(self):
+        for widget in self.month_chart_frame.winfo_children():
+            widget.destroy()
+
+        if not self.ventas_por_mes:
+            ttk.Label(self.month_chart_frame, text="No hay datos para mostrar", style="Muted.TLabel").pack(anchor="w")
+            return
+
+        labels = []
+        totals = []
+        for year_month, total in self.ventas_por_mes:
+            year = year_month[:4]
+            month = year_month[5:7]
+            labels.append(f"{self.MONTH_LABELS.get(month, month)} {year[2:]}")
+            totals.append(float(total or 0))
+
+        fig = Figure(figsize=(9.0, 3.6), dpi=100)
+        ax = fig.add_subplot(111)
+        ax.bar(labels, totals, color="#2563EB", alpha=0.9)
+        ax.set_xlabel("Mes")
+        ax.set_ylabel("Monto (HNL)")
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda x, _pos: f"L {x:,.0f}"))
+        ax.tick_params(axis="x", rotation=20)
+        ax.grid(axis="y", linestyle="--", alpha=0.25)
+        fig.tight_layout()
+
+        self.month_canvas = FigureCanvasTkAgg(fig, master=self.month_chart_frame)
+        self.month_canvas.draw()
+        self.month_canvas.get_tk_widget().pack(fill="both", expand=True)
+
+    def _draw_daily_chart(self):
+        for widget in self.daily_chart_frame.winfo_children():
+            widget.destroy()
+
+        if not self.ventas_por_dia:
+            ttk.Label(self.daily_chart_frame, text="No hay datos para mostrar", style="Muted.TLabel").pack(anchor="w")
+            return
+
+        days = [d for d, _ in self.ventas_por_dia]
+        totals = [float(v or 0) for _, v in self.ventas_por_dia]
+
+        fig = Figure(figsize=(9.0, 3.6), dpi=100)
+        ax = fig.add_subplot(111)
+        ax.plot(days, totals, marker="o", linewidth=2.5, color="#0F766E")
+        ax.set_xlabel("Dia")
+        ax.set_ylabel("Monto (HNL)")
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda x, _pos: f"L {x:,.0f}"))
+        ax.grid(axis="y", linestyle="--", alpha=0.25)
+        fig.tight_layout()
+
+        self.daily_canvas = FigureCanvasTkAgg(fig, master=self.daily_chart_frame)
+        self.daily_canvas.draw()
+        self.daily_canvas.get_tk_widget().pack(fill="both", expand=True)
+
+    def _render_stock_table(self):
+        self.stock_tree.delete(*self.stock_tree.get_children())
+
+        for nombre, stock in self.low_stock:
+            self.stock_tree.insert("", "end", values=(nombre, int(stock or 0)))
+
+        self.stock_count_var.set(f"{len(self.low_stock)} productos en alerta")
+
+    def _load_data(self):
+        self.total_sales = float(self.db.fetch("SELECT COALESCE(SUM(total), 0) FROM Ventas")[0][0] or 0)
+        self.daily_sales = float(
+            self.db.fetch("SELECT COALESCE(SUM(total), 0) FROM Ventas WHERE DATE(fecha)=DATE('now', 'localtime')")[0][0]
+            or 0
+        )
+        self.monthly_sales = float(
+            self.db.fetch(
+                "SELECT COALESCE(SUM(total), 0) FROM Ventas WHERE strftime('%Y-%m', fecha)=strftime('%Y-%m','now','localtime')"
+            )[0][0]
+            or 0
+        )
 
         self.low_stock = self.db.fetch(
-            "SELECT nombre, stock FROM Productos WHERE stock <= 10 ORDER BY stock ASC"
+            "SELECT nombre, stock FROM Productos WHERE stock <= 10 ORDER BY stock ASC, nombre ASC"
         )
 
-        best_seller_data = self.db.fetch("""
+        best_seller_data = self.db.fetch(
+            """
             SELECT nombre_producto, SUM(cantidad)
             FROM DetalleVenta
             GROUP BY nombre_producto
             ORDER BY SUM(cantidad) DESC
             LIMIT 1
-        """)
+            """
+        )
         self.best_seller = best_seller_data[0] if best_seller_data else ("N/A", 0)
 
-        self.total_products = self.db.fetch("SELECT COUNT(*) FROM Productos")[0][0] or 0
+        self.total_products = int(self.db.fetch("SELECT COALESCE(COUNT(*), 0) FROM Productos")[0][0] or 0)
 
-        # Ventas por mes y por día
-        ventas_mes = self.db.fetch("""
-            SELECT strftime('%m', fecha), SUM(total)
+        monthly_rows = self.db.fetch(
+            """
+            SELECT strftime('%Y-%m', fecha) AS ym, SUM(total)
             FROM Ventas
-            GROUP BY strftime('%m', fecha)
-            ORDER BY strftime('%m', fecha)
-        """)
-        self.ventas_por_mes = ventas_mes or []
+            GROUP BY ym
+            ORDER BY ym DESC
+            LIMIT 12
+            """
+        )
+        self.ventas_por_mes = list(reversed(monthly_rows))
 
-        ventas_dia = self.db.fetch("""
+        self.ventas_por_dia = self.db.fetch(
+            """
             SELECT strftime('%d', fecha), SUM(total)
             FROM Ventas
-            WHERE strftime('%m', fecha)=strftime('%m','now')
+            WHERE strftime('%Y-%m', fecha)=strftime('%Y-%m','now','localtime')
             GROUP BY strftime('%d', fecha)
-        """)
-        self.ventas_por_dia = ventas_dia or []
+            ORDER BY strftime('%d', fecha)
+            """
+        )
 
-    # -------------------- Render del Dashboard --------------------
-    def render_dashboard(self):
-        # -------------------- Título --------------------
-        ttk.Label(
-            self.scrollable_frame, text="📊 Dashboard Moderno",
-            font=("Segoe UI", 18, "bold"), foreground="#333"
-        ).grid(row=0, column=0, columnspan=3, pady=(0,20), sticky="w")
-
-        # -------------------- KPIs --------------------
-        kpi_width = 220
-        kpi_height = 110
-
-        def kpi_card(row, col, title, value, color, description):
-            card = tk.Frame(self.scrollable_frame, width=kpi_width, height=kpi_height, bg="#ffffff", relief="raised", bd=2)
-            card.grid(row=row, column=col, padx=10, pady=10)
-            card.grid_propagate(False)
-            card.columnconfigure(0, weight=1)
-
-            tk.Label(card, text=title, font=("Segoe UI", 10), bg="#ffffff", fg="#6c757d").pack(anchor="w", padx=10, pady=(10,5))
-            val_label = tk.Label(card, text=value, font=("Segoe UI", 16, "bold"), bg="#ffffff", fg=color)
-            val_label.pack(anchor="w", padx=10, pady=2)
-            self.animate_counter(val_label, value)
-
-            ttk.Separator(card, orient="horizontal").pack(fill="x", padx=10, pady=5)
-            tk.Label(card, text=description, font=("Segoe UI", 8), bg="#ffffff", fg="#adb5bd").pack(anchor="w", padx=10, pady=(0,10))
-
-
-        # Fila 1
-        kpi_card(1, 0, "Ventas Totales", f"${self.total_sales:,.2f}", "#007bff", "Total acumulado")
-        kpi_card(1, 1, "Ventas Mensuales", f"${self.monthly_sales:,.2f}", "#28a745", "Total del mes")
-        kpi_card(1, 2, "Ventas Diarias", f"${self.daily_sales:,.2f}", "#ffc107", "Hoy")
-        # Fila 2
-        kpi_card(2, 0, "Stock Bajo", f"{len(self.low_stock)} items", "#dc3545", "Productos < 10 unidades")
-        kpi_card(2, 1, "Producto Más Vendido", f"{self.best_seller[0][:20]}...", "#17a2b8", f"{self.best_seller[1]} vendidos")
-        kpi_card(2, 2, "Total Productos", f"{self.total_products}", "#6f42c1", "Inventario total")
-
-        # -------------------- Gráficas --------------------
-        self.create_bar_chart(self.ventas_por_mes, "📈 Ventas Mensuales", "Mes", "Monto ($)", row=3, column=0, columnspan=2)
-        self.create_line_chart(self.ventas_por_dia, "📊 Ventas Diarias", "Día", "Monto ($)", row=3, column=2, columnspan=1)
-        self.create_pie_chart(self.low_stock, "🚨 Stock Bajo", "# Productos", row=4, column=0, columnspan=1)
-
-        # -------------------- Botón actualizar --------------------
-        ttk.Button(self.scrollable_frame, text="🔄 Actualizar Dashboard", command=self.refresh_dashboard).grid(row=5, column=0, columnspan=3, pady=20)
-
-    # -------------------- Animación KPIs --------------------
-    def animate_counter(self, label, target_value):
-        def run():
-            try:
-                if isinstance(target_value, str) and target_value.startswith("$"):
-                    num = float(target_value.replace("$","").replace(",",""))
-                    step = max(1,int(num/50))
-                    for i in range(0,int(num)+1,step):
-                        label.config(text=f"${i:,.0f}")
-                        time.sleep(0.02)
-                    label.config(text=f"${num:,.2f}")
-                elif isinstance(target_value, str) and "items" in target_value:
-                    num = int(target_value.replace(" items",""))
-                    for i in range(num+1):
-                        label.config(text=f"{i} items")
-                        time.sleep(0.02)
-                else:
-                    label.config(text=target_value)
-            except:
-                label.config(text=target_value)
-        threading.Thread(target=run, daemon=True).start()
-
-    # -------------------- Gráficas --------------------
-    def create_bar_chart(self, data, title, xlabel, ylabel, row=0, column=0, columnspan=1):
-        chart_frame = ttk.LabelFrame(self.scrollable_frame, text=title, padding=5)
-        chart_frame.grid(row=row, column=column, columnspan=columnspan, sticky="nsew", padx=5, pady=5)
-
-        if not data:
-            ttk.Label(chart_frame, text="No hay datos", font=("Segoe UI",10)).pack()
-            return
-
-        # Ajustamos el tamaño de la figura al frame (más ancho si hay muchos datos)
-        fig_width = max(6, len(data) * 0.5)  # Ajusta según cantidad de datos
-        fig = Figure(figsize=(fig_width,3), dpi=70)
-        ax = fig.add_subplot(111)
-        x = [d[0] for d in data]
-        y = [d[1] for d in data]
-        ax.bar(x, y, color="#007bff", alpha=0.6)
-        ax.set_xlabel(xlabel)
-        ax.set_ylabel(ylabel)
-        ax.grid(axis='y', linestyle='--', alpha=0.6)
-
-        canvas_fig = FigureCanvasTkAgg(fig, master=chart_frame)
-        canvas_fig.get_tk_widget().pack(fill="both", expand=True)
-        canvas_fig.draw()
-
-
-    def create_line_chart(self, data, title, xlabel, ylabel, row=0, column=0, columnspan=1):
-        chart_frame = ttk.LabelFrame(self.scrollable_frame, text=title, padding=5)
-        chart_frame.grid(row=row, column=column, columnspan=columnspan, sticky="nsew", padx=5, pady=5)
-
-        if not data:
-            ttk.Label(chart_frame, text="No hay datos", font=("Segoe UI",10)).pack()
-            return
-
-        fig_width = max(5, len(data) * 0.5)
-        fig = Figure(figsize=(fig_width,3), dpi=70)
-        ax = fig.add_subplot(111)
-        x = [d[0] for d in data]
-        y = [d[1] for d in data]
-        ax.plot(x, y, marker="o", color="#28a745")
-        ax.set_xlabel(xlabel)
-        ax.set_ylabel(ylabel)
-        ax.grid(axis='y', linestyle='--', alpha=0.6)
-
-        canvas_fig = FigureCanvasTkAgg(fig, master=chart_frame)
-        canvas_fig.get_tk_widget().pack(fill="both", expand=True)
-        canvas_fig.draw()
-
-    def create_pie_chart(self, data, title, label_field, row=0, column=0, columnspan=1):
-        chart_frame = ttk.LabelFrame(self.scrollable_frame, text=title, padding=5)
-        chart_frame.grid(row=row, column=column, columnspan=columnspan, sticky="nsew", padx=5, pady=5)
-
-        canvas = tk.Canvas(chart_frame)
-        v_scroll = ttk.Scrollbar(chart_frame, orient="vertical", command=canvas.yview)
-        inner_frame = ttk.Frame(canvas)
-        inner_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.create_window((0,0), window=inner_frame, anchor="nw")
-        canvas.configure(yscrollcommand=v_scroll.set)
-        canvas.pack(side="left", fill="both", expand=True)
-        v_scroll.pack(side="right", fill="y")
-
-        if not data:
-            ttk.Label(inner_frame, text="No hay datos", font=("Segoe UI",10)).pack()
-            return
-
-        fig = Figure(figsize=(4,3), dpi=80)
-        ax = fig.add_subplot(111)
-        labels = [d[0] for d in data]
-        sizes = [d[1] for d in data]
-        ax.pie(sizes, labels=labels, autopct='%1.1f%%', colors=["#007bff","#28a745","#ffc107","#dc3545","#6f42c1"])
-        ax.axis('equal')
-
-        canvas_fig = FigureCanvasTkAgg(fig, master=inner_frame)
-        canvas_fig.get_tk_widget().pack(fill="both", expand=True)
-        canvas_fig.draw()
-
-    # -------------------- Refresh --------------------
     def refresh_dashboard(self):
-        for widget in self.scrollable_frame.winfo_children():
-            widget.destroy()
-        self.load_data()
-        self.render_dashboard()
-# -------------------- Gráficas ajustadas --------------------
-def create_bar_chart(self, data, title, xlabel, ylabel, row=0, column=0, columnspan=1):
-    chart_frame = ttk.LabelFrame(self.scrollable_frame, text=title, padding=10)
-    chart_frame.grid(row=row, column=column, columnspan=columnspan, sticky="nsew", padx=5, pady=5)
-
-    if not data:
-        ttk.Label(chart_frame, text="No hay datos", font=("Segoe UI", 10)).pack()
-        return
-
-    fig = Figure(figsize=(6, 4), dpi=80)
-    ax = fig.add_subplot(111)
-    x = [d[0] for d in data]
-    y = [d[1] for d in data]
-    ax.bar(x, y, color="#007bff", alpha=0.7)
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel)
-    ax.grid(axis='y', linestyle='--', alpha=0.6)
-
-    # Rotar etiquetas si hay muchas
-    if len(x) > 5:
-        ax.set_xticklabels(x, rotation=45, ha="right")
-
-    fig.tight_layout()  # Ajusta todo dentro de la figura
-
-    canvas_fig = FigureCanvasTkAgg(fig, master=chart_frame)
-    canvas_fig.get_tk_widget().pack(fill="both", expand=True)
-    canvas_fig.draw()
-
-
-def create_line_chart(self, data, title, xlabel, ylabel, row=0, column=0, columnspan=1):
-    chart_frame = ttk.LabelFrame(self.scrollable_frame, text=title, padding=10)
-    chart_frame.grid(row=row, column=column, columnspan=columnspan, sticky="nsew", padx=5, pady=5)
-
-    if not data:
-        ttk.Label(chart_frame, text="No hay datos", font=("Segoe UI", 10)).pack()
-        return
-
-    fig = Figure(figsize=(6, 4), dpi=80)
-    ax = fig.add_subplot(111)
-    x = [d[0] for d in data]
-    y = [d[1] for d in data]
-    ax.plot(x, y, marker="o", color="#28a745")
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel)
-    ax.grid(axis='y', linestyle='--', alpha=0.6)
-
-    if len(x) > 5:
-        ax.set_xticklabels(x, rotation=45, ha="right")
-
-    fig.tight_layout()
-
-    canvas_fig = FigureCanvasTkAgg(fig, master=chart_frame)
-    canvas_fig.get_tk_widget().pack(fill="both", expand=True)
-    canvas_fig.draw()
-
-
-def create_pie_chart(self, data, title, label_field, row=0, column=0, columnspan=1):
-    chart_frame = ttk.LabelFrame(self.scrollable_frame, text=title, padding=10)
-    chart_frame.grid(row=row, column=column, columnspan=columnspan, sticky="nsew", padx=5, pady=5)
-
-    if not data:
-        ttk.Label(chart_frame, text="No hay datos", font=("Segoe UI", 10)).pack()
-        return
-
-    fig = Figure(figsize=(4, 4), dpi=80)
-    ax = fig.add_subplot(111)
-    labels = [d[0] for d in data]
-    sizes = [d[1] for d in data]
-    colors = ["#007bff","#28a745","#ffc107","#dc3545","#6f42c1"]
-    ax.pie(sizes, labels=labels, autopct='%1.1f%%', colors=colors[:len(labels)])
-    ax.axis('equal') 
-
-    fig.tight_layout()
-
-    canvas_fig = FigureCanvasTkAgg(fig, master=chart_frame)
-    canvas_fig.get_tk_widget().pack(fill="both", expand=True)
-    canvas_fig.draw()
-
-
-    # -------------------- Refresh ,,,--------------------
-    def refresh_dashboard(self):
-        for widget in self.scrollable_frame.winfo_children():
-            widget.destroy()
-        self.load_data()
-        self.render_dashboard()
+        self._load_data()
+        self._render_kpis()
+        self._draw_month_chart()
+        self._draw_daily_chart()
+        self._render_stock_table()

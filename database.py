@@ -4,7 +4,6 @@ Maneja todas las operaciones CRUD y estructura de la base de datos
 """
 
 import sqlite3
-from tkinter import messagebox
 
 
 class DBManager:
@@ -21,6 +20,7 @@ class DBManager:
     def __init__(self, db_name="erp_profesional.db"):
         self.conn = sqlite3.connect(db_name)
         self.cursor = self.conn.cursor()
+        self.last_error = None
         self.conn.execute("PRAGMA foreign_keys = ON")
         self.create_tables()
 
@@ -121,12 +121,18 @@ class DBManager:
                 total REAL NOT NULL,
                 monto_pagado REAL,
                 vuelto REAL,
+                metodo_pago TEXT DEFAULT 'NO_DEFINIDO',
                 usuario_id INTEGER,
                 id_cliente INTEGER,
                 tipo_recibo TEXT,
                 FOREIGN KEY (id_cliente) REFERENCES Clientes(id)
             )
         """
+        )
+        self._ensure_column(
+            "Ventas",
+            "metodo_pago",
+            "TEXT DEFAULT 'NO_DEFINIDO'",
         )
 
         # Tabla de Detalle de Venta
@@ -273,10 +279,10 @@ class DBManager:
         # Productos de ejemplo
         if not self.fetch("SELECT * FROM Productos"):
             productos_ejemplo = [
-                ('Monitor 27"', "Monitor 4K profesional", 320.00, 15, 1),
-                ("Teclado Mecánico", "Switches Blue, RGB", 45.00, 105, 1),
-                ("Mouse Gamer", "RGB, 16000 DPI", 35.00, 50, 1),
-                ("Laptop HP", "i5, 8GB RAM, 256GB SSD", 650.00, 8, 1),
+                ('Monitor 27"', "Monitor 4K profesional", 6890.00, 15, 1),
+                ("Teclado Mecánico", "Switches Blue, RGB", 1190.00, 105, 1),
+                ("Mouse Gamer", "RGB, 16000 DPI", 850.00, 50, 1),
+                ("Laptop HP", "i5, 8GB RAM, 256GB SSD", 18500.00, 8, 1),
             ]
             self.cursor.executemany(
                 "INSERT INTO Productos (nombre, descripcion, precio, stock, proveedor_id) VALUES (?, ?, ?, ?, ?)",
@@ -372,9 +378,9 @@ class DBManager:
         </div>
 
         <div class="total-section">
-            <div class="item total"><span>TOTAL A PAGAR:</span><span>${{TOTAL}}</span></div>
-            <div class="item"><span>MONTO RECIBIDO:</span><span>${{MONTO_PAGADO}}</span></div>
-            <div class="item"><span>VUELTO:</span><span>${{VUELTO}}</span></div>
+            <div class="item total"><span>TOTAL A PAGAR:</span><span>L {{TOTAL}}</span></div>
+            <div class="item"><span>MONTO RECIBIDO:</span><span>L {{MONTO_PAGADO}}</span></div>
+            <div class="item"><span>VUELTO:</span><span>L {{VUELTO}}</span></div>
         </div>
 
         <div class="footer">
@@ -506,6 +512,24 @@ class DBManager:
             query += " AND date(v.fecha) <= date(?)"
             params.append(fecha_hasta)
 
+        mes = filters.get("mes")
+        if mes not in (None, ""):
+            try:
+                month_token = f"{int(mes):02d}"
+                query += " AND strftime('%m', v.fecha) = ?"
+                params.append(month_token)
+            except (TypeError, ValueError):
+                pass
+
+        anio = filters.get("anio")
+        if anio not in (None, ""):
+            try:
+                year_token = str(int(anio))
+                query += " AND strftime('%Y', v.fecha) = ?"
+                params.append(year_token)
+            except (TypeError, ValueError):
+                pass
+
         venta_id = (filters.get("venta_id") or "").strip()
         if venta_id:
             query += " AND v.id = ?"
@@ -552,6 +576,7 @@ class DBManager:
                 v.total,
                 COALESCE(v.monto_pagado, 0) AS monto_pagado,
                 COALESCE(v.vuelto, 0) AS vuelto,
+                COALESCE(v.metodo_pago, 'NO_DEFINIDO') AS metodo_pago,
                 v.tipo_recibo,
                 c.nombre,
                 c.apellido,
@@ -576,15 +601,16 @@ class DBManager:
             "total": float(row[2] or 0),
             "monto_pagado": float(row[3] or 0),
             "vuelto": float(row[4] or 0),
-            "tipo_recibo": row[5],
+            "metodo_pago": row[5] or "NO_DEFINIDO",
+            "tipo_recibo": row[6],
             "cliente": {
-                "nombre": row[6] or "",
-                "apellido": row[7] or "",
-                "dni": row[8] or "",
-                "telefono": row[9] or "",
-                "direccion": row[10] or "",
+                "nombre": row[7] or "",
+                "apellido": row[8] or "",
+                "dni": row[9] or "",
+                "telefono": row[10] or "",
+                "direccion": row[11] or "",
             }
-            if row[6] or row[7] or row[8] or row[9] or row[10]
+            if row[7] or row[8] or row[9] or row[10] or row[11]
             else None,
         }
 
@@ -694,22 +720,25 @@ class DBManager:
     def fetch(self, query, params=()):
         """Ejecuta una consulta SELECT y retorna los resultados."""
         try:
+            self.last_error = None
             self.cursor.execute(query, params)
             return self.cursor.fetchall()
         except sqlite3.Error as e:
-            messagebox.showerror("Error de DB", f"Error en consulta: {e}")
+            self.last_error = e
             return []
 
     def execute(self, query, params=()):
         """Ejecuta una consulta INSERT/UPDATE/DELETE."""
         try:
+            self.last_error = None
             self.cursor.execute(query, params)
             self.conn.commit()
             return self.cursor.lastrowid
         except sqlite3.Error as e:
-            messagebox.showerror("Error de DB", f"Error en operación: {e}")
+            self.last_error = e
             return None
 
     def close(self):
         """Cierra la conexión a la base de datos."""
         self.conn.close()
+

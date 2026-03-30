@@ -1,249 +1,100 @@
-# Sistema ERP Profesional
+# ERP Facturacion (Desktop)
 
-Sistema de gestión empresarial (ERP) completo desarrollado en Python con Tkinter y SQLite.
+Sistema ERP de escritorio orientado a facturacion y punto de venta (POS), desarrollado en Python con interfaz Tkinter y base de datos SQLite.
 
-## Características
+## Funcion Del Proyecto
 
-- **Dashboard**: Panel de control con métricas de ventas, stock bajo y productos más vendidos
-- **Sistema POS**: Punto de venta completo con búsqueda de productos, carrito y generación de recibos
-- **Gestión de Productos**: CRUD completo con importación/exportación CSV
-- **Gestión de Proveedores**: Administración de proveedores y contactos
-- **Configuración**: Gestión de descuentos y plantillas de recibos personalizables
-- **Base de datos SQLite**: Almacenamiento local sin necesidad de servidor
+Este proyecto permite administrar el ciclo comercial basico de un negocio:
 
-## Estructura del Proyecto
+- Gestion de clientes (altas, edicion, estados, import/export CSV).
+- Gestion de productos e inventario (CRUD, ajuste masivo de precios, import/export CSV).
+- Gestion de proveedores.
+- Punto de venta unificado (carrito, descuentos, metodos de pago, cambio, confirmacion de venta).
+- Generacion de recibos en HTML (ticket/carta), guardado local y reimpresion.
+- Registro historico de ventas con filtros por fecha, producto, cliente y venta.
+- Dashboard con KPIs y graficas (ventas por mes/dia, stock bajo, producto mas vendido).
+- Configuracion de descuentos y plantilla de recibo.
 
-```
-erp_app/
-├── main.py              # Punto de entrada
-├── database.py          # Gestor de base de datos
-├── file_manager.py      # Importación/exportación
-├── frames/
-│   ├── __init__.py      # Paquete de frames
-│   ├── dashboard.py     # Panel de control
-│   ├── products.py      # Gestión de productos
-│   ├── suppliers.py     # Gestión de proveedores
-│   ├── config.py        # Configuración
-│   └── sales.py         # Sistema POS
-├── assets/              # Recursos (opcional)
-└── README.md
+## Tecnologias Utilizadas
+
+- Python 3.11+
+- Tkinter / ttk (UI de escritorio)
+- SQLite3 (persistencia local)
+- matplotlib (graficas en dashboard)
+- tkcalendar (selector de fechas en registro)
+- unittest (pruebas)
+
+## Arquitectura Del Proyecto
+
+El proyecto combina una UI legacy funcional (`frames/`) con una estructura por capas en `erp/` (dominio, repositorios, validadores y servicios) para evolucionar el sistema sin perder compatibilidad.
+
+## Estructura Principal
+
+```text
+ERP-Facturacion/
+  main.py                 # Punto de entrada
+  database.py             # DBManager, esquema y consultas SQLite
+  file_manager.py         # Importacion/exportacion CSV
+  receipt_builder.py      # Renderizado de recibos HTML
+  erp/                    # Capa de dominio/repositorios (modular)
+  frames/                 # Modulos UI (Dashboard, POS, Clientes, etc.)
+  tests/                  # Pruebas unitarias e integracion
+  erp_profesional.db      # Base de datos local
 ```
 
 ## Requisitos
 
-- Python 3.7 o superior
-- Tkinter (incluido con Python)
-- SQLite3 (incluido con Python)
-- tkcalendar (DatePicker para filtros de fechas)
+- Python 3.11 o superior
+- pip
 
-## Instalación
-
-1. **Clonar o descargar el proyecto**
+## Instalacion
 
 ```bash
-git clone https://github.com/tu-usuario/erp-sistema.git
-cd erp-sistema
+python -m venv .venv
+.venv\Scripts\activate
+python -m pip install --upgrade pip
+pip install matplotlib tkcalendar
 ```
 
-2. **Crear la estructura de carpetas**
+## Ejecucion
 
 ```bash
-mkdir -p erp_app/frames
-mkdir -p erp_app/assets
-```
-
-3. **Colocar todos los archivos en sus respectivas carpetas**
-
-- `main.py`, `database.py`, `file_manager.py` → raíz de `erp_app/`
-- Todos los archivos de frames → `erp_app/frames/`
-
-## Ejecución
-
-```bash
-cd erp_app
 python main.py
 ```
 
-### Dependencias adicionales
+## Credenciales Iniciales
 
-Si no está instalado `tkcalendar`, instálalo con:
+El sistema crea un usuario por defecto si la tabla `Usuarios` esta vacia:
 
-```bash
-pip install tkcalendar
-```
+- Usuario: `admin`
+- Contrasena: `1234`
 
-## Credenciales por Defecto
+Recomendacion: cambiar estas credenciales en entornos reales.
 
-- **Usuario**: `admin`
-- **Contraseña**: `1234`
+## Base De Datos
 
-## Uso del Sistema
+- Archivo por defecto: `erp_profesional.db`
+- Motor: SQLite local
+- Inicializacion automatica de tablas y datos semilla desde `DBManager` (`database.py`).
 
-### 1. Login
-
-Al iniciar, ingrese las credenciales por defecto o las que haya configurado.
-
-### 2. Dashboard
-
-Muestra métricas importantes:
-
-- Total de ventas acumuladas
-- Productos con stock bajo
-- Producto más vendido
-- Alertas de inventario
-
-### 3. Sistema POS (Ventas)
-
-**Atajos de teclado**:
-
-- `F1`: Abrir búsqueda de productos
-- `F2`: Finalizar venta
-
-**Proceso de venta**:
-
-1. Presione F1 o "Buscar Producto"
-2. Busque y seleccione productos
-3. Ingrese cantidad y añada al carrito
-4. Aplique descuentos si es necesario
-5. Ingrese monto recibido
-6. Presione F2 o "Finalizar Venta"
-7. Guarde el recibo HTML generado
-
-### 4. Gestión de Productos
-
-- **Agregar**: Click en "Nuevo Producto", complete el formulario y guarde
-- **Editar**: Seleccione un producto de la lista, modifique y guarde
-- **Eliminar**: Seleccione y click en "Eliminar"
-- **Buscar**: Use la barra de búsqueda en tiempo real
-- **Importar CSV**: Click en "Importar CSV" y seleccione el archivo
-- **Exportar CSV**: Click en "Exportar CSV"
-
-### 5. Gestión de Proveedores
-
-CRUD completo para administrar proveedores:
-
-- Nombre de la empresa
-- Persona de contacto
-- Teléfono
-
-### 6. Configuración
-
-**Pestaña Descuentos**:
-
-- Crear descuentos por docena, mayorista o por producto
-- Definir porcentajes
-- Aplicar en el sistema POS
-
-**Pestaña Plantilla de Recibo**:
-
-- Editar plantilla HTML del recibo
-- Variables disponibles:
-  - `{{NOMBRE_NEGOCIO}}`
-  - `{{ID_VENTA}}`
-  - `{{FECHA}}`
-  - `{{TOTAL}}`
-  - `{{MONTO_PAGADO}}`
-  - `{{VUELTO}}`
-  - `<!-- ITEMS_PLACEHOLDER -->`
-- Vista previa antes de guardar
-
-## Formato CSV para Importación
-
-### Productos.csv
-
-```csv
-id,nombre,descripcion,precio,stock,proveedor_id
-1,Monitor 27",Monitor 4K,320.00,15,1
-2,Teclado RGB,Mecánico switches blue,45.00,100,1
-```
-
-**Campos**:
-
-- `id`: ID del producto (opcional para nuevos)
-- `nombre`: Nombre del producto (obligatorio)
-- `descripcion`: Descripción detallada
-- `precio`: Precio en formato decimal (obligatorio)
-- `stock`: Cantidad disponible (obligatorio)
-- `proveedor_id`: ID del proveedor (obligatorio)
-
-## Base de Datos
-
-El sistema crea automáticamente un archivo `erp_profesional.db` con las siguientes tablas:
-
-- **Productos**: Inventario completo
-- **Proveedores**: Información de proveedores
-- **Usuarios**: Credenciales de acceso
-- **Descuentos**: Reglas de descuento
-- **Ventas**: Registro de todas las ventas
-- **DetalleVenta**: Items de cada venta
-- **Configuracion**: Parámetros del sistema
-
-## Personalización
-
-### Cambiar Colores
-
-Edite el método `configure_styles()` en `main.py`:
-
-```python
-self.style.configure('Accent.TButton',
-    background='#tu_color',  # Color principal
-    foreground='white'
-)
-```
-
-### Agregar Nuevos Módulos
-
-1. Crear nuevo archivo en `frames/nuevo_modulo.py`
-2. Importar en `frames/__init__.py`
-3. Agregar al diccionario en `main.py`:
-
-```python
-self.frames = {
-    ...
-    "Nuevo Módulo": NuevoModuloFrame
-}
-```
-
-## Troubleshooting
-
-### Error: ModuleNotFoundError
-
-- Verifique que todos los archivos estén en las carpetas correctas
-- Asegúrese de ejecutar desde la carpeta `erp_app/`
-
-### Error: No module named 'tkinter'
-
-En Linux:
+## Pruebas
 
 ```bash
-sudo apt-get install python3-tk
+python -m unittest discover -s tests -p "test_*.py"
 ```
 
-### Base de datos bloqueada
+## Modulos UI Disponibles
 
-- Cierre todas las instancias de la aplicación
-- Elimine el archivo `erp_profesional.db` para reiniciar
+- `Dashboard`: indicadores y graficas operativas.
+- `Ventas (POS)`: venta normal/especial, descuentos, pagos y recibo.
+- `Registro de Ventas`: consulta historica, exportacion e impresion.
+- `Clientes`: CRUD, filtros y estadisticas.
+- `Productos`: CRUD, busqueda, import/export y ajuste de precios.
+- `Proveedores`: CRUD y exportacion.
+- `Configuracion`: descuentos + editor de plantilla de recibo.
 
-## Mejoras Futuras
+## Notas
 
-- [ ] Reportes en PDF
-- [ ] Gráficos estadísticos
-- [ ] Multi-usuario con roles avanzados
-- [ ] Sincronización en la nube
-- [ ] Código de barras
-- [ ] Facturación electrónica
-
-## Licencia
-
-Este proyecto es de código abierto y puede ser usado libremente para fines educativos o comerciales.
-
-## Contacto
-
-Para soporte o consultas: [tu-email@ejemplo.com]
-
----
-
-**Desarrollado con ❤️ usando Python y Tkinter**
-
-
-
+- El proyecto actualmente es desktop-first (no web).
+- Los recibos HTML se guardan en una ruta configurable desde el sistema.
+- Existe codigo modular en `erp/` para facilitar refactor y escalabilidad.

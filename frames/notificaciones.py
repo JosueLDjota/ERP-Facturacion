@@ -8,6 +8,7 @@ import tkinter as tk
 from tkinter import ttk
 from datetime import datetime
 from tkinter import messagebox
+from .ui import format_hnl
 
 class NotificationManager:
     def __init__(self, root, db_manager):
@@ -120,7 +121,7 @@ class NotificationManager:
         if self.config['sales_alerts']:
             self.show_notification(
                 "✓ Venta Exitosa",
-                f"Venta: {venta_id}\nTotal: ${total:.2f}\n{datetime.now().strftime('%H:%M:%S')}",
+                f"Venta: {venta_id}\nTotal: {format_hnl(total)}\n{datetime.now().strftime('%H:%M:%S')}",
                 type="success",
                 duration=4000
             )

@@ -27,6 +27,7 @@ def build_receipt_html(
     vuelto,
     items,
     cliente=None,
+    metodo_pago="NO_DEFINIDO",
     mode="ticket",
     empresa=None,
     number_to_words=None,
@@ -161,6 +162,7 @@ def build_receipt_html(
         <div class="title">FACTURA</div>
         <div>No. 0000-0001-{escape(str(venta_id).split('-')[-1])}</div>
         <div>Fecha: {escape(str(fecha))}</div>
+        <div>Metodo de pago: {escape(str(metodo_pago or 'NO_DEFINIDO'))}</div>
     </div>
 
     {cliente_html}
