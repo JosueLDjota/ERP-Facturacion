@@ -6,6 +6,7 @@ POS con catalogo, carrito y resumen en un solo panel principal.
 import random
 import tempfile
 import webbrowser
+import os
 from datetime import datetime
 from pathlib import Path
 
@@ -1359,17 +1360,50 @@ class UnifiedPOSFrame(ttk.Frame):
             return f"{prefix} {self.number_to_words(resto)}".strip() if resto else prefix
         return str(n)
 
-    def save_receipt(self, html_content, venta_id):
-        saved_path = self.db.get_config("recibo_save_path", "")
-        if not saved_path:
-            saved_path = str(Path.home() / "Recibos")
-        output_dir = Path(saved_path).expanduser()
+    def _default_receipt_dir(self):
+        local_appdata = os.getenv("LOCALAPPDATA") or str(Path.home())
+        return Path(local_appdata) / "ERP-Facturacion" / "Recibos"
+
+    def _candidate_receipt_dirs(self):
+        configured_path = (self.db.get_config("recibo_save_path", "") or "").strip()
+        candidates = []
+
+        if configured_path:
+            candidates.append(Path(configured_path).expanduser())
+
+        default_dir = self._default_receipt_dir()
+        if default_dir not in candidates:
+            candidates.append(default_dir)
+
+        return candidates
+
+    def _write_receipt_file(self, output_dir, venta_id, html_content):
         output_dir.mkdir(parents=True, exist_ok=True)
         file_path = output_dir / f"Recibo_{venta_id}.html"
         with file_path.open("w", encoding="utf-8") as handle:
             handle.write(html_content)
-        self.last_receipt_path = str(file_path)
-        return str(file_path)
+        return file_path
+
+    def save_receipt(self, html_content, venta_id):
+        configured_path = (self.db.get_config("recibo_save_path", "") or "").strip()
+        last_error = None
+
+        for output_dir in self._candidate_receipt_dirs():
+            try:
+                file_path = self._write_receipt_file(output_dir, venta_id, html_content)
+            except OSError as exc:
+                last_error = exc
+                continue
+
+            if str(output_dir) != configured_path:
+                self.db.set_config("recibo_save_path", str(output_dir))
+
+            self.last_receipt_path = str(file_path)
+            return str(file_path)
+
+        raise PermissionError(
+            "No se pudo guardar el recibo en la ruta configurada ni en la ruta local predeterminada."
+        ) from last_error
 
     def print_receipt(self, html_content):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False, encoding="utf-8") as handle:

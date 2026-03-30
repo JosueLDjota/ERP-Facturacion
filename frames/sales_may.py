@@ -1553,7 +1553,8 @@ Presione "PROCESAR VENTA" para finalizar.
         save_path = self.db.get_config("recibo_save_path", "")
 
         if not save_path or not os.path.isdir(save_path):
-            save_path = os.path.join(os.path.expanduser("~"), "Documentos_Ventas")
+            local_appdata = os.getenv("LOCALAPPDATA") or os.path.expanduser("~")
+            save_path = os.path.join(local_appdata, "ERP-Facturacion", "Recibos")
             os.makedirs(save_path, exist_ok=True)
             self.db.set_config("recibo_save_path", save_path)
 
@@ -1571,7 +1572,8 @@ Presione "PROCESAR VENTA" para finalizar.
         save_path = self.db.get_config("recibo_save_path", "")
         
         if not save_path or not os.path.isdir(save_path):
-            save_path = os.path.join(os.path.expanduser("~"), "Documentos_Ventas")
+            local_appdata = os.getenv("LOCALAPPDATA") or os.path.expanduser("~")
+            save_path = os.path.join(local_appdata, "ERP-Facturacion", "Recibos")
             os.makedirs(save_path, exist_ok=True)
             self.db.set_config("recibo_save_path", save_path)
         
