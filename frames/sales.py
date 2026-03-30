@@ -13,6 +13,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import messagebox, ttk
 
+from erp.domain.services.invoice_calculator import calculate_invoice_totals
 from receipt_builder import build_receipt_html
 from .ui import FONTS, PALETTE, center_window, format_hnl, normalize_hnl_amount, parse_hnl
 
@@ -808,7 +809,7 @@ class UnifiedPOSFrame(ttk.Frame):
         for item in self.cart_tree.get_children():
             self.cart_tree.delete(item)
 
-        total = 0.0
+        line_total = 0.0
         auto_count = 0
         manual_count = 0
         info_sources = set()
@@ -818,7 +819,7 @@ class UnifiedPOSFrame(ttk.Frame):
             price = float(item["precio_unitario"])
             pct = float(item.get("descuento_porcentaje", 0))
             subtotal = (price * qty) * (1 - pct)
-            total += subtotal
+            line_total += subtotal
 
             if item.get("manual"):
                 manual_count += 1
@@ -838,8 +839,9 @@ class UnifiedPOSFrame(ttk.Frame):
                 values=(prod_id, item["nombre"], qty, format_hnl(price), desc_text, format_hnl(subtotal)),
             )
 
-        self.total_var.set(round(total, 2))
-        self.total_display_var.set(format_hnl(total))
+        invoice = self._calculate_invoice_totals(validate_payment=False)
+        self.total_var.set(round(invoice.total, 2))
+        self.total_display_var.set(format_hnl(invoice.total))
         if self.cart:
             units = sum(int(item["cantidad"]) for item in self.cart.values())
             self.cart_items_var.set(f"{units} unidades en {len(self.cart)} productos")
@@ -853,24 +855,37 @@ class UnifiedPOSFrame(ttk.Frame):
         else:
             source = "Sin descuento"
 
-        self.discount_info_label.config(text=f"Desc.: {source}. Auto: Docena/Majorista cuando aplique. Manual no se sobrescribe.", foreground="#2e7d32" if total else "#666")
+        self.discount_info_label.config(text=f"Desc.: {source}. Auto: Docena/Majorista cuando aplique. Manual no se sobrescribe.", foreground="#2e7d32" if line_total else "#666")
         self._refresh_cart_editor()
         self.calculate_change()
 
     def calculate_change(self, event=None):
-        total = float(self.total_var.get() or 0)
-        pagado = self._parse_float(self.monto_pagado_var.get())
-        vuelto = pagado - total
-        self.vuelto_var.set(round(max(0.0, vuelto), 2))
-        self.vuelto_display_var.set(format_hnl(self.vuelto_var.get()))
+        invoice = self._calculate_invoice_totals(validate_payment=False)
+        total = float(invoice.total)
+        self.total_var.set(total)
         self.total_display_var.set(format_hnl(total))
+
+        metodo_pago = (self.payment_method_var.get() or "NO_DEFINIDO").upper()
+        if metodo_pago == "TRANSFERENCIA":
+            self.monto_pagado_var.set(f"{invoice.monto_recibido:.2f}")
+            if self._widget_exists(getattr(self, "monto_entry", None)):
+                self.monto_entry.state(["disabled"])
+        else:
+            if self._widget_exists(getattr(self, "monto_entry", None)):
+                self.monto_entry.state(["!disabled"])
+
+        self.vuelto_var.set(round(invoice.vuelto, 2))
+        self.vuelto_display_var.set(format_hnl(invoice.vuelto))
 
         if total <= 0:
             self.status_var.set("Agregue productos al carrito.")
             self.finalize_button.state(["disabled"])
-        elif pagado < total:
-            faltante = total - pagado
+        elif invoice.validation_errors and metodo_pago == "EFECTIVO":
+            faltante = total - self._parse_float(self.monto_pagado_var.get())
             self.status_var.set(f"Faltan {format_hnl(faltante)}. Presione Vender para abrir el cobro.")
+            self.finalize_button.state(["!disabled"])
+        elif metodo_pago == "TRANSFERENCIA":
+            self.status_var.set("Transferencia validada. El monto recibido se ajusta al total y el vuelto es L 0.00.")
             self.finalize_button.state(["!disabled"])
         else:
             self.status_var.set("Pago valido. Puede continuar con Vender.")
@@ -892,24 +907,26 @@ class UnifiedPOSFrame(ttk.Frame):
             self.toggle_preview()
         self.refresh_preview()
 
-    def _build_sale_snapshot(self):
+    def _build_sale_snapshot(self, validate_payment=True):
+        invoice = self._calculate_invoice_totals(validate_payment=validate_payment)
         return {
             "venta_id": f"V-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(100, 999)}",
             "fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "total": float(self.total_var.get() or 0),
-            "pagado": self._parse_float(self.monto_pagado_var.get()),
-            "vuelto": float(self.vuelto_var.get() or 0),
+            "total": float(invoice.total),
+            "pagado": float(invoice.monto_recibido),
+            "vuelto": float(invoice.vuelto),
             "cliente_id": self.selected_client_id,
             "metodo_pago": self.payment_method_var.get() or "NO_DEFINIDO",
             "modo": self.sale_mode_var.get(),
             "cart_snapshot": {prod_id: dict(item) for prod_id, item in self.cart.items()},
+            "tax_included": self._invoice_prices_include_tax(),
         }
 
     def refresh_preview(self):
         if not self.preview_visible or not self.preview_text or not self.preview_text.winfo_exists():
             return
 
-        snapshot = self.pending_sale or self._build_sale_snapshot()
+        snapshot = self.pending_sale or self._build_sale_snapshot(validate_payment=False)
         if self.preview_mode_var.get() == "letter":
             content = self.format_receipt_letter(
                 snapshot["venta_id"],
@@ -981,6 +998,7 @@ class UnifiedPOSFrame(ttk.Frame):
             values=("EFECTIVO", "TARJETA", "TRANSFERENCIA", "QR", "CREDITO", "NO_DEFINIDO"),
         )
         payment_combo.grid(row=1, column=0, sticky="ew", pady=(2, 8))
+        payment_combo.bind("<<ComboboxSelected>>", self.calculate_change)
         ttk.Label(fields, text="Monto recibido:").grid(row=2, column=0, sticky="w")
         self.monto_entry = ttk.Entry(fields, textvariable=self.monto_pagado_var)
         self.monto_entry.grid(row=3, column=0, sticky="ew", pady=(2, 8))
@@ -1008,14 +1026,13 @@ class UnifiedPOSFrame(ttk.Frame):
         self.calculate_change()
 
     def _continue_from_payment_modal(self):
-        total = float(self.total_var.get() or 0)
-        pagado = self._parse_float(self.monto_pagado_var.get())
-        if total <= 0:
+        invoice = self._calculate_invoice_totals(validate_payment=False)
+        if invoice.total <= 0:
             self.status_var.set("Agregue productos al carrito.")
             self.payment_modal_status_var.set(self.status_var.get())
             return
-        if pagado < total:
-            faltante = total - pagado
+        if invoice.validation_errors and (self.payment_method_var.get() or "NO_DEFINIDO").upper() == "EFECTIVO":
+            faltante = invoice.total - self._parse_float(self.monto_pagado_var.get())
             self.status_var.set(f"Faltan {format_hnl(faltante)} para completar el pago.")
             self.payment_modal_status_var.set(self.status_var.get())
             return
@@ -1027,10 +1044,9 @@ class UnifiedPOSFrame(ttk.Frame):
         if not self.cart:
             messagebox.showwarning("Advertencia", "El carrito esta vacio.")
             return
-        total = float(self.total_var.get() or 0)
-        pagado = self._parse_float(self.monto_pagado_var.get())
-        if pagado < total:
-            faltante = total - pagado
+        invoice = self._calculate_invoice_totals(validate_payment=False)
+        if invoice.validation_errors and (self.payment_method_var.get() or "NO_DEFINIDO").upper() == "EFECTIVO":
+            faltante = invoice.total - self._parse_float(self.monto_pagado_var.get())
             messagebox.showwarning("Pago incompleto", f"Faltan {format_hnl(faltante)} para completar el pago.")
             return
 
@@ -1241,6 +1257,8 @@ class UnifiedPOSFrame(ttk.Frame):
                     "descuento_porcentaje": pct,
                     "descuento_monto": (float(item["precio_unitario"]) * int(item["cantidad"])) * pct,
                     "subtotal": subtotal,
+                    "tax_rate": float(item.get("tax_rate", 0.15)),
+                    "tax_exempt": bool(item.get("tax_exempt", False)),
                 }
             )
         return items
@@ -1264,6 +1282,7 @@ class UnifiedPOSFrame(ttk.Frame):
             metodo_pago=metodo_pago or self.payment_method_var.get() or "NO_DEFINIDO",
             mode=self.preview_mode_var.get(),
             number_to_words=self.number_to_words,
+            tax_included=(self.pending_sale or {}).get("tax_included", self._invoice_prices_include_tax()),
         )
 
     def format_receipt_ticket(self, venta_id, total, pagado, vuelto, fecha, cart_data=None, cliente_id=None, metodo_pago=None):
@@ -1420,6 +1439,25 @@ class UnifiedPOSFrame(ttk.Frame):
             return normalize_hnl_amount(parse_hnl(value, default=0.0))
         except (TypeError, ValueError, tk.TclError):
             return 0.0
+
+    def _widget_exists(self, widget):
+        return bool(widget) and bool(widget.winfo_exists())
+
+    def _invoice_prices_include_tax(self):
+        raw_value = str(self.db.get_config("factura_tax_included", "1") or "1").strip().lower()
+        return raw_value not in {"0", "false", "no", "off"}
+
+    def _calculate_invoice_totals(self, cart_data=None, amount_received=None, payment_method=None, validate_payment=False):
+        cart_data = cart_data or self.cart
+        invoice = calculate_invoice_totals(
+            self._receipt_items(cart_data),
+            tax_included=self._invoice_prices_include_tax(),
+            payment_method=payment_method or self.payment_method_var.get() or "NO_DEFINIDO",
+            amount_received=self.monto_pagado_var.get() if amount_received is None else amount_received,
+        )
+        if validate_payment and invoice.validation_errors:
+            raise ValueError(" ".join(invoice.validation_errors))
+        return invoice
 
     def _set_cart_editor_state(self, prod_id):
         item = self.cart.get(prod_id) if prod_id is not None else None

@@ -64,6 +64,10 @@ class RegistroVentasFrame(ttk.Frame):
         self._load_filter_options()
         self.refresh_table()
 
+    def _invoice_prices_include_tax(self):
+        raw_value = str(self.app.db.get_config("factura_tax_included", "1") or "1").strip().lower()
+        return raw_value not in {"0", "false", "no", "off"}
+
     def _build_ui(self):
         self.columnconfigure(0, weight=1)
         self.rowconfigure(1, weight=0)
@@ -539,6 +543,7 @@ class RegistroVentasFrame(ttk.Frame):
             cliente=sale["cliente"],
             metodo_pago=sale.get("metodo_pago", "NO_DEFINIDO"),
             mode="ticket",
+            tax_included=self._invoice_prices_include_tax(),
         )
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False, encoding="utf-8") as temp_file:

@@ -2,6 +2,8 @@
 
 from html import escape
 
+from erp.domain.services.invoice_calculator import calculate_invoice_totals
+
 
 DEFAULT_EMPRESA = {
     "rtn": "12011972000081",
@@ -31,6 +33,7 @@ def build_receipt_html(
     mode="ticket",
     empresa=None,
     number_to_words=None,
+    tax_included=True,
 ):
     """Construye HTML de factura en formato ticket o carta."""
     company = dict(DEFAULT_EMPRESA)
@@ -47,29 +50,29 @@ def build_receipt_html(
         width = "700px"
         font_size = "15px"
 
-    total = float(total or 0)
-    monto_pagado = float(monto_pagado or 0)
-    vuelto = float(vuelto or 0)
+    invoice = calculate_invoice_totals(
+        items,
+        tax_included=tax_included,
+        payment_method=metodo_pago,
+        amount_received=monto_pagado,
+    )
 
-    subtotal_gravado = 0.0
     items_rows = []
-    for item in items:
-        cantidad = float(item.get("cantidad", 0))
-        precio_unitario = float(item.get("precio_unitario", 0))
-        descuento_pct = float(item.get("descuento_porcentaje", 0))
-        descuento_monto = float(item.get("descuento_monto", 0))
+    for line in invoice.lineas:
+        cantidad = float(line.cantidad)
+        precio_unitario = float(line.precio_unitario)
+        descuento_pct = float(line.descuento_porcentaje)
 
         if descuento_pct > 0:
-            subtotal = (precio_unitario * cantidad) * (1 - descuento_pct)
+            subtotal = float(line.subtotal_linea)
             desc_text = f" (-{int(descuento_pct * 100)}%)"
         else:
-            subtotal = float(item.get("subtotal", (precio_unitario * cantidad) - descuento_monto))
+            subtotal = float(line.subtotal_linea)
             desc_text = ""
 
-        subtotal_gravado += subtotal
-        product_id = item.get("producto_id")
+        product_id = line.producto_id
         codigo = str(product_id).zfill(8 if mode == "ticket" else 13) if product_id else "-"
-        nombre = str(item.get("nombre", "Producto"))[: (10 if mode == "ticket" else 28)]
+        nombre = str(line.nombre or "Producto")
 
         items_rows.append(
             "<tr>"
@@ -81,8 +84,10 @@ def build_receipt_html(
             "</tr>"
         )
 
-    impuesto_15 = subtotal_gravado * 0.15
-    total_con_impuesto = subtotal_gravado + impuesto_15
+    total = float(invoice.total)
+    monto_pagado = float(invoice.monto_recibido)
+    vuelto = float(invoice.vuelto)
+    metodo_pago = str(metodo_pago or "NO_DEFINIDO").upper()
     total_entero = int(total)
     total_centavos = int(round((total - total_entero) * 100))
     monto_letras = (
@@ -183,18 +188,17 @@ def build_receipt_html(
     </table>
 
     <table class="totals">
-        <tr><td>Sub Total</td><td>L {subtotal_gravado:.2f}</td></tr>
-        <tr><td>Exento</td><td>L 0.00</td></tr>
-        <tr><td>Gravado 15%</td><td>L {subtotal_gravado:.2f}</td></tr>
-        <tr><td>Gravado 18%</td><td>L 0.00</td></tr>
-        <tr><td>Impuesto 15%</td><td>L {impuesto_15:.2f}</td></tr>
-        <tr><td>Impuesto 18%</td><td>L 0.00</td></tr>
-        <tr><td>TOTAL</td><td>L {total_con_impuesto:.2f}</td></tr>
+        <tr><td>Exento</td><td>L {invoice.exento:.2f}</td></tr>
+        <tr><td>Base Gravada 15%</td><td>L {invoice.base_gravada_15:.2f}</td></tr>
+        <tr><td>Base Gravada 18%</td><td>L {invoice.base_gravada_18:.2f}</td></tr>
+        <tr><td>Impuesto 15%</td><td>L {invoice.impuesto_15:.2f}</td></tr>
+        <tr><td>Impuesto 18%</td><td>L {invoice.impuesto_18:.2f}</td></tr>
+        <tr><td>TOTAL</td><td>L {invoice.total:.2f}</td></tr>
     </table>
 
-    <div><strong>Total cobrado:</strong> L {total:.2f}</div>
-    <div><strong>Monto recibido:</strong> L {monto_pagado:.2f}</div>
-    <div><strong>Vuelto:</strong> L {vuelto:.2f}</div>
+    <div><strong>Total cobrado:</strong> L {invoice.total:.2f}</div>
+    <div><strong>Monto recibido:</strong> L {invoice.monto_recibido:.2f}</div>
+    {"<div><strong>Vuelto:</strong> L %.2f</div>" % invoice.vuelto if metodo_pago == "EFECTIVO" else ""}
 
     <div class="observaciones">
         <p><strong>SON:</strong> {escape(monto_letras)}</p>
