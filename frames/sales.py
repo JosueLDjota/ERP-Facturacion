@@ -1,2005 +1,1562 @@
-"""
+﻿"""
 frames/sales.py
-Sistema POS (Point of Sale) para gestión de ventas
+POS con catalogo, carrito y resumen en un solo panel principal.
 """
 
-from tkinter import ttk, messagebox, Toplevel, filedialog
-import tkinter as tk
-from datetime import datetime
 import random
+import tempfile
+import webbrowser
 import os
+from datetime import datetime
+from pathlib import Path
+
+import tkinter as tk
+from tkinter import messagebox, ttk
+
+from erp.domain.services.invoice_calculator import calculate_invoice_totals
+from receipt_builder import build_receipt_html
+from .ui import FONTS, PALETTE, center_window, format_hnl, normalize_hnl_amount, parse_hnl
 
 
-class SalesFrame(ttk.Frame):
-    """Frame de ventas POS."""
+class UnifiedPOSFrame(ttk.Frame):
+    """Vista unica de POS con modos Normal y Especial."""
 
     def __init__(self, parent, app):
-        super().__init__(parent, padding="10")
+        super().__init__(parent, padding="8")
         self.app = app
         self.db = app.db
+
         self.cart = {}
+        self.product_index = {}
         self.discount_data = {}
+        self.discount_by_type = {}
+        self.client_data = {}
+        self.selected_product_id = None
+        self.selected_client_id = None
+        self.selected_client_is_wholesale = False
+        self.pending_sale = None
+        self.preview_visible = False
+        self.preview_window = None
+        self.preview_text = None
+        self.summary_window = None
+        self.payment_window = None
+        self.payment_modal_status_var = tk.StringVar(value="")
 
-        self.grid_columnconfigure(0, weight=2)
-        self.grid_columnconfigure(1, weight=1)
-        self.grid_rowconfigure(0, weight=1)
+        self.sale_mode_var = tk.StringVar(value="NORMAL")
+        self.search_var = tk.StringVar()
+        self.discount_var = tk.StringVar(value="Sin descuento")
+        self.client_var = tk.StringVar(value="Cliente General")
+        self.payment_method_var = tk.StringVar(value="EFECTIVO")
+        self.total_var = tk.DoubleVar(value=0.0)
+        self.total_display_var = tk.StringVar(value=format_hnl(0))
+        self.monto_pagado_var = tk.StringVar(value="0.00")
+        self.vuelto_var = tk.DoubleVar(value=0.0)
+        self.vuelto_display_var = tk.StringVar(value=format_hnl(0))
+        self.status_var = tk.StringVar(value="Agregue productos al carrito.")
+        self.preview_mode_var = tk.StringVar(value="ticket")
+        self.preview_label_var = tk.StringVar(value="Vista previa disponible")
+        self.cart_items_var = tk.StringVar(value="0 productos")
+        self.selected_cart_name_var = tk.StringVar(value="Seleccione un producto del carrito.")
+        self.selected_cart_discount_var = tk.StringVar(value="Descuento: 0%")
+        self.selected_cart_subtotal_var = tk.StringVar(value="Subtotal: L 0.00")
+        self.cart_hint_var = tk.StringVar(value="Seleccione un producto para editar la cantidad.")
+        self.cart_editor_var = tk.StringVar(value="1")
 
-        self.cart_frame = ttk.Frame(self, padding="10", relief="groove")
-        self.cart_frame.grid(row=0, column=0, sticky="nsew", padx=10)
-
-        self.checkout_frame = ttk.Frame(self, padding="15", relief="groove")
-        self.checkout_frame.grid(row=0, column=1, sticky="nsew", padx=10)
-
-        self.create_cart_ui()
-        self.create_checkout_ui()
+        self._configure_styles()
+        self._build_ui()
+        self.load_discounts()
+        self.load_products()
+        self.load_clients()
         self.update_cart_display()
 
-        # Atajos de teclado
-        self.app.bind("<F1>", lambda e: self.open_product_search())
-        self.app.bind("<F2>", lambda e: self.finalize_sale())
-        self.app.bind("<F3>", lambda e: self.apply_discount_to_all())
-        self.app.bind("<F4>", lambda e: self.remove_all_discounts())
+        self.app.bind("<F1>", lambda e: self.focus_search(), add="+")
+        self.app.bind("<F2>", lambda e: self.open_payment_modal(), add="+")
+        self.app.bind("<F3>", lambda e: self.apply_discount_to_all(), add="+")
+        self.app.bind("<F4>", lambda e: self.remove_all_discounts(), add="+")
 
-    def load_discounts(self):
-        """Carga los descuentos disponibles desde la base de datos."""
+    def destroy(self):
         try:
-            discounts = self.db.fetch(
-                "SELECT id, nombre, porcentaje FROM Descuentos ORDER BY nombre"
-            )
+            self.app.unbind("<F1>")
+            self.app.unbind("<F2>")
+            self.app.unbind("<F3>")
+            self.app.unbind("<F4>")
+        except Exception:
+            pass
+        self._close_payment_window()
+        self._close_preview_window()
+        self._close_summary_window()
+        super().destroy()
 
-            self.discount_combo["values"] = ()
-            discount_options = ["Sin descuento"]
-            self.discount_data = {
-                0: {"id": 0, "nombre": "Sin descuento", "porcentaje": 0.0}
-            }
+    def _configure_styles(self):
+        style = ttk.Style()
+        style.configure(
+            "POSCard.TLabelframe",
+            padding=12,
+            background=PALETTE["white"],
+            bordercolor=PALETTE["gray_border"],
+            borderwidth=1,
+            relief="solid",
+        )
+        style.configure(
+            "POSCard.TLabelframe.Label",
+            background=PALETTE["white"],
+            foreground=PALETTE["blue_dark"],
+            font=FONTS["subheader"],
+        )
+        style.configure("POSSection.TLabel", font=("Segoe UI", 11, "bold"), foreground=PALETTE["blue_dark"], background=PALETTE["white"])
+        style.configure("POSMuted.TLabel", foreground=PALETTE["gray_text"], background=PALETTE["white"], font=FONTS["small"])
 
-            for discount in discounts:
-                discount_id, nombre, porcentaje = discount
-                porcentaje_int = (
-                    int(porcentaje * 100)
-                    if (porcentaje * 100).is_integer()
-                    else round(porcentaje * 100, 1)
-                )
-                display_text = f"{nombre} - {porcentaje_int}%"
-                discount_options.append(display_text)
-                self.discount_data[len(discount_options) - 1] = {
-                    "id": discount_id,
-                    "nombre": nombre,
-                    "porcentaje": porcentaje,
-                }
+        style.configure(
+            "POSPrimary.TButton",
+            font=("Segoe UI", 10, "bold"),
+            padding=(12, 8),
+            relief="flat",
+            borderwidth=0,
+            background=PALETTE["blue_primary"],
+            foreground=PALETTE["white"],
+        )
+        style.map("POSPrimary.TButton", background=[("active", PALETTE["blue_dark"])])
 
-            self.discount_combo["values"] = discount_options
-            self.discount_combo.set("Sin descuento")
+        style.configure(
+            "POSDanger.TButton",
+            font=("Segoe UI", 10, "bold"),
+            padding=(12, 8),
+            relief="flat",
+            borderwidth=0,
+            background=PALETTE["danger"],
+            foreground=PALETTE["white"],
+        )
+        style.map("POSDanger.TButton", background=[("active", "#8F1C13")])
 
-        except Exception as e:
-            print(f"Error cargando descuentos: {e}")
-            self.discount_combo["values"] = ("Sin descuento",)
-            self.discount_combo.set("Sin descuento")
-            self.discount_data = {
-                0: {"id": 0, "nombre": "Sin descuento", "porcentaje": 0.0}
-            }
+        style.configure(
+            "POSSuccess.TButton",
+            font=("Segoe UI", 10, "bold"),
+            padding=(12, 10),
+            relief="flat",
+            borderwidth=0,
+            background=PALETTE["success"],
+            foreground=PALETTE["white"],
+        )
+        style.map("POSSuccess.TButton", background=[("active", "#055A3B")])
 
-    def create_cart_ui(self):
-        """Crea la interfaz del carrito."""
-        ttk.Label(
-            self.cart_frame, text="Carrito de Compras", font=("Arial", 14, "bold")
-        ).pack(pady=(0, 10))
+    def _build_ui(self):
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)
 
-        ttk.Button(
-            self.cart_frame,
-            text="Buscar Producto (F1)",
-            command=self.open_product_search,
-        ).pack(fill="x", pady=5)
+        header = ttk.Frame(self, style="App.TFrame")
+        header.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 6))
+        header.grid_columnconfigure(1, weight=1)
+
+        ttk.Label(header, text="Punto de venta (POS)", style="Header.TLabel").grid(row=0, column=0, sticky="w")
+
+        mode_frame = ttk.LabelFrame(header, text="Modo de venta", padding=8)
+        mode_frame.grid(row=0, column=1, sticky="e")
+        for text, value in (("Normal", "NORMAL"), ("Especial (Mayorista)", "ESPECIAL")):
+            ttk.Radiobutton(mode_frame, text=text, value=value, variable=self.sale_mode_var, command=self.on_sale_mode_change).pack(side="left", padx=8)
+
+        self.pos_canvas = tk.Canvas(self, highlightthickness=0, bg=PALETTE["blue_soft"])
+        self.pos_canvas.grid(row=1, column=0, sticky="nsew")
+        pos_scroll = ttk.Scrollbar(self, orient="vertical", command=self.pos_canvas.yview)
+        pos_scroll.grid(row=1, column=1, sticky="ns")
+        self.pos_canvas.configure(yscrollcommand=pos_scroll.set)
+        self.pos_canvas.bind(
+            "<Enter>",
+            lambda _e: self.pos_canvas.bind_all(
+                "<MouseWheel>",
+                lambda ev: self.pos_canvas.yview_scroll(int(-1 * (ev.delta / 120)), "units"),
+            ),
+        )
+        self.pos_canvas.bind("<Leave>", lambda _e: self.pos_canvas.unbind_all("<MouseWheel>"))
+
+        body = ttk.Frame(self.pos_canvas, style="App.TFrame", padding=(0, 2, 0, 0))
+        self.pos_canvas_window = self.pos_canvas.create_window((0, 0), window=body, anchor="nw")
+        body.bind("<Configure>", lambda _e: self.pos_canvas.configure(scrollregion=self.pos_canvas.bbox("all")))
+        self.pos_canvas.bind("<Configure>", lambda e: self.pos_canvas.itemconfig(self.pos_canvas_window, width=e.width))
+
+        body.grid_columnconfigure(0, weight=5)
+        body.grid_columnconfigure(1, weight=4)
+        body.grid_rowconfigure(0, weight=1)
+
+        self.catalog_frame = ttk.LabelFrame(body, text="Catalogo de productos", style="POSCard.TLabelframe")
+        self.catalog_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
+
+        right_panel = ttk.Frame(body, style="App.TFrame")
+        right_panel.grid(row=0, column=1, sticky="nsew")
+        right_panel.grid_rowconfigure(0, weight=1, minsize=360)
+        right_panel.grid_rowconfigure(1, weight=1, minsize=280)
+        right_panel.grid_columnconfigure(0, weight=1)
+
+        self.cart_frame = ttk.LabelFrame(right_panel, text="Carrito de compras", style="POSCard.TLabelframe")
+        self.cart_frame.grid(row=0, column=0, sticky="nsew", pady=(0, 6))
+        self.checkout_frame = ttk.LabelFrame(right_panel, text="Cobro / pago", style="POSCard.TLabelframe")
+        self.checkout_frame.grid(row=1, column=0, sticky="nsew")
+
+        self._build_catalog_ui()
+        self._build_cart_ui()
+        self._build_checkout_ui()
+
+    def _create_scrollable_section(self, parent):
+        parent.grid_rowconfigure(0, weight=1)
+        parent.grid_columnconfigure(0, weight=1)
+
+        canvas = tk.Canvas(parent, highlightthickness=0, bg=PALETTE["white"])
+        canvas.grid(row=0, column=0, sticky="nsew")
+        y_scroll = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+        y_scroll.grid(row=0, column=1, sticky="ns")
+        canvas.configure(yscrollcommand=y_scroll.set)
+        canvas.bind(
+            "<Enter>",
+            lambda _e: canvas.bind_all(
+                "<MouseWheel>",
+                lambda ev: canvas.yview_scroll(int(-1 * (ev.delta / 120)), "units"),
+            ),
+        )
+        canvas.bind("<Leave>", lambda _e: canvas.unbind_all("<MouseWheel>"))
+
+        content = ttk.Frame(canvas, style="Surface.TFrame")
+        window_id = canvas.create_window((0, 0), window=content, anchor="nw")
+        content.bind("<Configure>", lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>", lambda e: canvas.itemconfigure(window_id, width=e.width))
+        return content
+
+    def _build_catalog_ui(self):
+        search_frame = ttk.Frame(self.catalog_frame)
+        search_frame.pack(fill="x", pady=(0, 8))
+        ttk.Label(search_frame, text="Buscar:").pack(side="left", padx=(0, 6))
+        self.search_entry = ttk.Entry(search_frame, textvariable=self.search_var)
+        self.search_entry.pack(side="left", fill="x", expand=True)
+        self.search_entry.bind("<KeyRelease>", lambda e: self.filter_products())
+        ttk.Button(search_frame, text="F1", width=3, command=self.focus_search).pack(side="left", padx=6)
+        ttk.Button(search_frame, text="Refrescar", style="POSPrimary.TButton", command=self.load_products).pack(side="left")
+
+        tree_frame = ttk.Frame(self.catalog_frame)
+        tree_frame.pack(fill="both", expand=True)
+        self.products_tree = ttk.Treeview(tree_frame, columns=("ID", "Producto", "Stock", "Precio"), show="headings", height=12)
+        for col, text, width, anchor in (("ID", "ID", 50, "center"), ("Producto", "Producto", 210, "w"), ("Stock", "Stock", 70, "center"), ("Precio", "Precio", 95, "center")):
+            self.products_tree.heading(col, text=text)
+            self.products_tree.column(col, width=width, anchor=anchor)
+        y_scroll = ttk.Scrollbar(tree_frame, orient="vertical", command=self.products_tree.yview)
+        x_scroll = ttk.Scrollbar(tree_frame, orient="horizontal", command=self.products_tree.xview)
+        self.products_tree.configure(yscrollcommand=y_scroll.set, xscrollcommand=x_scroll.set)
+        self.products_tree.grid(row=0, column=0, sticky="nsew")
+        y_scroll.grid(row=0, column=1, sticky="ns")
+        x_scroll.grid(row=1, column=0, sticky="ew")
+        tree_frame.grid_rowconfigure(0, weight=1)
+        tree_frame.grid_columnconfigure(0, weight=1)
+        self.products_tree.bind("<<TreeviewSelect>>", self.on_product_select)
+        self.products_tree.bind("<Double-1>", lambda e: self.add_selected_product())
+
+        detail_frame = ttk.LabelFrame(self.catalog_frame, text="Detalle", padding=8)
+        detail_frame.pack(fill="x", pady=(8, 0))
+        self.detail_text = tk.Text(detail_frame, height=7, wrap=tk.WORD, font=("Segoe UI", 9), relief="solid", borderwidth=1)
+        self.detail_text.pack(fill="both", expand=True)
+        self.detail_text.insert("1.0", "Seleccione un producto del catalogo.")
+        self.detail_text.config(state="disabled")
+
+        add_frame = ttk.Frame(self.catalog_frame)
+        add_frame.pack(fill="x", pady=(8, 0))
+        qty_box = ttk.Frame(add_frame)
+        qty_box.pack(fill="x", pady=(0, 6))
+        ttk.Label(qty_box, text="Cantidad:").pack(side="left")
+        self.qty_var = tk.IntVar(value=1)
+        self.qty_spin = ttk.Spinbox(qty_box, from_=1, to=10000, textvariable=self.qty_var, width=8)
+        self.qty_spin.pack(side="left", padx=6)
+        ttk.Label(qty_box, text="Descuento:").pack(side="left", padx=(14, 4))
+        self.discount_combo = ttk.Combobox(qty_box, textvariable=self.discount_var, state="readonly", width=22)
+        self.discount_combo.pack(side="left", fill="x", expand=True)
+        self.discount_combo.bind("<<ComboboxSelected>>", self.apply_selected_discount)
+        ttk.Button(add_frame, text="Agregar al carrito", style="POSPrimary.TButton", command=self.add_selected_product).pack(fill="x")
+
+    def _build_cart_ui(self):
+        cart_panel = self._create_scrollable_section(self.cart_frame)
+
+        header = ttk.Frame(cart_panel)
+        header.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+        header.grid_columnconfigure(0, weight=1)
+        ttk.Label(header, textvariable=self.cart_items_var, style="POSSection.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(header, text="La cantidad se actualiza al instante.", style="POSMuted.TLabel").grid(row=1, column=0, sticky="w", pady=(2, 0))
 
         self.cart_tree = ttk.Treeview(
-            self.cart_frame,
+            cart_panel,
             columns=("ID", "Producto", "Cant", "PrecioU", "Desc", "Subtotal"),
             show="headings",
-            height=15,
+            height=16,
         )
+        for col, text, width, anchor in (
+            ("ID", "ID", 50, "center"),
+            ("Producto", "Producto", 220, "w"),
+            ("Cant", "Cant.", 70, "center"),
+            ("PrecioU", "P. Unit. (HNL)", 120, "e"),
+            ("Desc", "Desc.", 70, "center"),
+            ("Subtotal", "Subtotal (HNL)", 140, "e"),
+        ):
+            self.cart_tree.heading(col, text=text)
+            self.cart_tree.column(col, width=width, anchor=anchor)
+        cart_scroll = ttk.Scrollbar(cart_panel, orient="vertical", command=self.cart_tree.yview)
+        cart_x_scroll = ttk.Scrollbar(cart_panel, orient="horizontal", command=self.cart_tree.xview)
+        self.cart_tree.configure(yscrollcommand=cart_scroll.set, xscrollcommand=cart_x_scroll.set)
+        self.cart_tree.grid(row=1, column=0, sticky="nsew")
+        cart_scroll.grid(row=1, column=1, sticky="ns")
+        cart_x_scroll.grid(row=2, column=0, sticky="ew")
+        cart_panel.grid_rowconfigure(1, weight=1)
+        cart_panel.grid_columnconfigure(0, weight=1)
+        self.cart_tree.bind("<<TreeviewSelect>>", self.on_cart_select)
 
-        self.cart_tree.heading("ID", text="ID")
-        self.cart_tree.heading("Producto", text="Producto")
-        self.cart_tree.heading("Cant", text="Cant.")
-        self.cart_tree.heading("PrecioU", text="P. Unit.")
-        self.cart_tree.heading("Desc", text="Desc.")
-        self.cart_tree.heading("Subtotal", text="Subtotal")
+        actions = ttk.Frame(cart_panel)
+        actions.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(8, 4))
+        ttk.Button(actions, text="-1", width=4, style="POSPrimary.TButton", command=self.decrease_selected_quantity).pack(side="left", padx=(0, 6))
+        ttk.Button(actions, text="+1", width=4, style="POSPrimary.TButton", command=self.increase_selected_quantity).pack(side="left", padx=(0, 6))
+        ttk.Button(actions, text="Eliminar", style="POSDanger.TButton", command=self.remove_from_cart).pack(side="left", padx=(0, 6))
+        ttk.Button(actions, text="Limpiar carrito", style="POSPrimary.TButton", command=self.clear_cart).pack(side="left")
 
-        self.cart_tree.column("ID", width=40, anchor="center")
-        self.cart_tree.column("Producto", width=200)
-        self.cart_tree.column("Cant", width=60, anchor="center")
-        self.cart_tree.column("PrecioU", width=80, anchor="center")
-        self.cart_tree.column("Desc", width=60, anchor="center")
-        self.cart_tree.column("Subtotal", width=90, anchor="center")
+        self.discount_info_label = ttk.Label(cart_panel, text="", foreground="#666", wraplength=340, justify="left")
+        self.discount_info_label.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(4, 8))
 
-        self.cart_tree.pack(fill="both", expand=True, pady=10)
+        editor = ttk.LabelFrame(cart_panel, text="Cantidad", padding=8)
+        editor.grid(row=5, column=0, columnspan=2, sticky="ew")
+        editor.columnconfigure(2, weight=1)
+        ttk.Label(editor, textvariable=self.selected_cart_name_var, style="POSSection.TLabel").grid(row=0, column=0, columnspan=3, sticky="w")
+        ttk.Label(editor, textvariable=self.cart_hint_var, style="POSMuted.TLabel").grid(row=1, column=0, columnspan=3, sticky="w", pady=(2, 8))
+        ttk.Label(editor, text="Cantidad:").grid(row=2, column=0, sticky="w")
+        self.edit_qty_spin = ttk.Spinbox(editor, from_=1, to=10000, textvariable=self.cart_editor_var, width=10, command=self.on_quantity_editor_change)
+        self.edit_qty_spin.grid(row=2, column=1, sticky="w", padx=(6, 8))
+        self.edit_qty_spin.bind("<KeyRelease>", self.on_quantity_editor_change)
+        ttk.Label(editor, textvariable=self.selected_cart_discount_var).grid(row=3, column=0, sticky="w", pady=(8, 0))
+        ttk.Label(editor, textvariable=self.selected_cart_subtotal_var).grid(row=3, column=1, columnspan=2, sticky="w", pady=(8, 0))
+        self.edit_qty_spin.state(["disabled"])
 
-        action_frame = ttk.Frame(self.cart_frame)
-        action_frame.pack(fill="x", pady=5)
+    def _build_checkout_ui(self):
+        checkout_panel = self._create_scrollable_section(self.checkout_frame)
+        checkout_panel.grid_columnconfigure(0, weight=1)
+        checkout_panel.grid_rowconfigure(5, weight=1)
 
-        ttk.Button(
-            action_frame, text="Eliminar Producto", command=self.remove_from_cart
-        ).pack(side="left", padx=5)
-
-        ttk.Label(action_frame, text="Descuento:").pack(side="left", padx=(10, 5))
-        self.discount_var = tk.StringVar()
-        self.discount_combo = ttk.Combobox(
-            action_frame, textvariable=self.discount_var, state="readonly", width=20
-        )
-        self.discount_combo.pack(side="left", padx=5)
-        self.discount_combo.bind("<<ComboboxSelected>>", self.apply_selected_discount)
-
-        ttk.Button(
-            action_frame,
-            text="Aplicar a Todos (F3)",
-            command=self.apply_discount_to_all,
-        ).pack(side="left", padx=2)
-
-        ttk.Button(
-            action_frame, text="Quitar Todos (F4)", command=self.remove_all_discounts
-        ).pack(side="left", padx=2)
-
-        self.load_discounts()
-
-        ttk.Button(action_frame, text="Limpiar Carrito", command=self.clear_cart).pack(
-            side="right", padx=5
-        )
-
-        self.discount_info_label = ttk.Label(
-            self.cart_frame, text="", font=("Arial", 9), foreground="#666666"
-        )
-        self.discount_info_label.pack(fill="x", pady=(5, 0))
-
-    def create_checkout_ui(self):
-        """Crea la interfaz de pago."""
-        ttk.Label(
-            self.checkout_frame, text="Resumen de Venta", font=("Arial", 14, "bold")
-        ).pack(pady=(0, 20))
-
-        # Selector de cliente
-        client_frame = ttk.LabelFrame(self.checkout_frame, text="Cliente", padding=10)
-        client_frame.pack(fill="x", pady=(0, 20))
-
-        self.selected_client_id = None
-        self.client_var = tk.StringVar(value="Cliente General")
-
-        client_select_frame = ttk.Frame(client_frame)
-        client_select_frame.pack(fill="x")
-
-        self.client_combo = ttk.Combobox(
-            client_select_frame,
-            textvariable=self.client_var,
-            state="readonly",
-            width=25,
-        )
-        self.client_combo.pack(side="left", expand=True, fill="x", padx=(0, 5))
+        client_frame = ttk.LabelFrame(checkout_panel, text="Cliente", padding=8)
+        client_frame.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        row = ttk.Frame(client_frame)
+        row.pack(fill="x")
+        self.client_combo = ttk.Combobox(row, textvariable=self.client_var, state="readonly")
+        self.client_combo.pack(side="left", fill="x", expand=True)
         self.client_combo.bind("<<ComboboxSelected>>", self.on_client_select)
+        ttk.Button(row, text="Refrescar", width=10, style="POSPrimary.TButton", command=self.load_clients).pack(side="left", padx=6)
 
-        ttk.Button(
-            client_select_frame, text="🔄", command=self.load_clients, width=3
-        ).pack(side="right")
-
-        # Cargar clientes al inicio
-        self.load_clients()
-
-        self.total_var = tk.DoubleVar(value=0.0)
-        self.monto_pagado_var = tk.DoubleVar(value=0.0)
-        self.vuelto_var = tk.DoubleVar(value=0.0)
-
-        ttk.Label(self.checkout_frame, text="TOTAL A PAGAR:", font=("Arial", 14)).pack(
-            anchor="w"
+        self.total_label = ttk.Label(
+            checkout_panel,
+            textvariable=self.total_display_var,
+            font=("Segoe UI", 26, "bold"),
+            foreground=PALETTE["danger"],
+            background=PALETTE["white"],
         )
+        ttk.Label(checkout_panel, text="TOTAL A PAGAR", style="POSSection.TLabel").grid(row=1, column=0, sticky="w")
+        self.total_label.grid(row=2, column=0, sticky="w", pady=(2, 8))
 
-        total_label = ttk.Label(
-            self.checkout_frame,
-            textvariable=self.total_var,
-            font=("Arial", 32, "bold"),
-            foreground="#dc3545",
+        pay_frame = ttk.LabelFrame(checkout_panel, text="Estado de cobro", padding=8)
+        pay_frame.grid(row=3, column=0, sticky="ew", pady=(0, 8))
+        ttk.Label(pay_frame, text="Metodo de pago:").grid(row=0, column=0, sticky="w")
+        self.payment_method_combo = ttk.Combobox(
+            pay_frame,
+            textvariable=self.payment_method_var,
+            state="readonly",
+            values=("EFECTIVO", "TARJETA", "TRANSFERENCIA", "QR", "CREDITO", "NO_DEFINIDO"),
         )
-        total_label.pack(anchor="w", pady=(5, 20))
-
-        monto_frame = ttk.Frame(self.checkout_frame)
-        monto_frame.pack(fill="x", pady=10)
-
-        ttk.Label(monto_frame, text="Monto Recibido:", font=("Arial", 12)).pack(
-            side="left", padx=5
+        self.payment_method_combo.grid(row=1, column=0, sticky="ew", pady=(2, 6))
+        self.payment_method_combo.current(0)
+        ttk.Label(pay_frame, text="Monto recibido:").grid(row=2, column=0, sticky="w")
+        ttk.Label(pay_frame, textvariable=self.monto_pagado_var).grid(row=3, column=0, sticky="w", pady=(2, 4))
+        ttk.Label(pay_frame, text="Cambio:").grid(row=4, column=0, sticky="w")
+        self.vuelto_label = ttk.Label(
+            pay_frame,
+            textvariable=self.vuelto_display_var,
+            font=("Segoe UI", 16, "bold"),
+            foreground=PALETTE["success"],
+            background=PALETTE["white"],
         )
+        self.vuelto_label.grid(row=5, column=0, sticky="w", pady=(2, 0))
+        pay_frame.grid_columnconfigure(0, weight=1)
 
-        self.monto_entry = ttk.Entry(
-            monto_frame,
-            textvariable=self.monto_pagado_var,
-            font=("Arial", 14),
-            width=15,
-        )
-        self.monto_entry.pack(side="left", expand=True, fill="x")
-        self.monto_entry.bind("<KeyRelease>", self.calculate_change)
+        self.validation_label = ttk.Label(checkout_panel, textvariable=self.status_var, wraplength=320, foreground=PALETTE["gray_text"], background=PALETTE["white"])
+        self.validation_label.grid(row=4, column=0, sticky="ew", pady=(0, 8))
 
-        ttk.Label(self.checkout_frame, text="VUELTO:", font=("Arial", 14)).pack(
-            anchor="w", pady=(20, 0)
-        )
+        preview_mode_frame = ttk.LabelFrame(checkout_panel, text="Formato de recibo", padding=8)
+        preview_mode_frame.grid(row=5, column=0, sticky="ew", pady=(0, 8))
+        ttk.Radiobutton(preview_mode_frame, text="Ticket", value="ticket", variable=self.preview_mode_var, command=self.refresh_preview).pack(side="left")
+        ttk.Radiobutton(preview_mode_frame, text="Carta", value="letter", variable=self.preview_mode_var, command=self.refresh_preview).pack(side="left", padx=(8, 0))
+        ttk.Label(preview_mode_frame, textvariable=self.preview_label_var, style="POSMuted.TLabel").pack(side="right")
 
-        vuelto_label = ttk.Label(
-            self.checkout_frame,
-            textvariable=self.vuelto_var,
-            font=("Arial", 28, "bold"),
-            foreground="#28a745",
-        )
-        vuelto_label.pack(anchor="w", pady=(5, 20))
+        action_frame = ttk.Frame(checkout_panel)
+        action_frame.grid(row=6, column=0, sticky="ew")
+        self.preview_button = ttk.Button(action_frame, text="Vista previa", style="POSPrimary.TButton", command=self.toggle_preview)
+        self.preview_button.pack(side="left", fill="x", expand=True, padx=(0, 4))
+        self.finalize_button = ttk.Button(action_frame, text="Vender", style="POSSuccess.TButton", command=self.open_payment_modal)
+        self.finalize_button.pack(side="left", fill="x", expand=True, padx=(4, 0))
 
-        ttk.Button(
-            self.checkout_frame, text="FINALIZAR VENTA (F2)", command=self.finalize_sale
-        ).pack(fill="x", pady=20)
+    def increase_selected_quantity(self):
+        self._adjust_selected_quantity(1)
 
-        self.status_label = ttk.Label(
-            self.checkout_frame,
-            text="Agregue productos al carrito",
-            font=("Arial", 10),
-            foreground="#666",
-        )
-        self.status_label.pack(pady=10)
+    def decrease_selected_quantity(self):
+        self._adjust_selected_quantity(-1)
+
+    def _adjust_selected_quantity(self, delta):
+        selected = self.cart_tree.selection()
+        if not selected:
+            messagebox.showwarning("Advertencia", "Seleccione un producto del carrito.")
+            return
+
+        prod_id = int(selected[0])
+        item = self.cart.get(prod_id)
+        if not item:
+            return
+
+        new_qty = int(item["cantidad"]) + int(delta)
+        if new_qty <= 0:
+            self.remove_from_cart()
+            return
+
+        stock = self.product_index.get(prod_id, {}).get("stock", 0)
+        if new_qty > stock:
+            self.status_var.set(f"Stock insuficiente. Disponible: {stock}.")
+            return
+
+        item["cantidad"] = new_qty
+        self.recalculate_item_discount(prod_id)
+        self.pending_sale = None
+        self.update_cart_display()
+        self.cart_tree.selection_set(str(prod_id))
+        self.cart_tree.focus(str(prod_id))
+        self.refresh_preview()
+        self.status_var.set(f"Cantidad actualizada para {item['nombre']}.")
+
+    def focus_search(self):
+        self.search_entry.focus_set()
+        self.search_entry.selection_range(0, tk.END)
 
     def open_product_search(self):
-        """Abre ventana de búsqueda de productos."""
-        search_win = Toplevel(self.app)
-        search_win.title("Buscar Productos")
-        search_win.geometry("900x600")
+        self.focus_search()
 
-        search_win.grid_columnconfigure(0, weight=2)
-        search_win.grid_columnconfigure(1, weight=1)
-        search_win.grid_rowconfigure(2, weight=1)
+    def on_sale_mode_change(self):
+        self.pending_sale = None
+        self.recalculate_cart_discounts()
+        self.update_cart_display()
+        self.refresh_preview()
 
-        ttk.Label(
-            search_win, text="Búsqueda de Productos", font=("Arial", 14, "bold")
-        ).grid(row=0, column=0, columnspan=2, pady=10)
+    def load_discounts(self):
+        rows = self.db.fetch("SELECT id, nombre, tipo, porcentaje FROM Descuentos ORDER BY nombre")
+        options = ["Sin descuento"]
+        self.discount_data = {0: {"id": 0, "nombre": "Sin descuento", "tipo": None, "porcentaje": 0.0}}
+        self.discount_by_type = {}
 
-        search_frame = ttk.Frame(search_win)
-        search_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=5)
+        for idx, row in enumerate(rows, start=1):
+            disc_id, nombre, tipo, porcentaje = row
+            porcentaje = float(porcentaje or 0)
+            self.discount_data[idx] = {"id": disc_id, "nombre": nombre, "tipo": tipo, "porcentaje": porcentaje}
+            options.append(f"{nombre} - {int(round(porcentaje * 100))}%")
+            if tipo:
+                self.discount_by_type[str(tipo).strip().lower()] = porcentaje
 
-        search_var = tk.StringVar()
-        ttk.Label(search_frame, text="Buscar:").pack(side="left", padx=5)
-        search_entry = ttk.Entry(search_frame, textvariable=search_var, width=40)
-        search_entry.pack(side="left", fill="x", expand=True, padx=5)
-        search_entry.bind(
-            "<KeyRelease>", lambda e: self.filter_search(tree, search_var.get())
-        )
+        self.discount_combo["values"] = options
+        self.discount_combo.current(0)
 
-        tree = ttk.Treeview(
-            search_win,
-            columns=("ID", "Nombre", "Stock", "Precio"),
-            show="headings",
-            height=15,
-        )
+    def load_products(self):
+        self.product_index.clear()
+        rows = self.db.fetch("SELECT id, nombre, descripcion, precio, stock FROM Productos ORDER BY nombre")
+        self._render_products(rows)
 
-        tree.heading("ID", text="ID")
-        tree.heading("Nombre", text="Producto")
-        tree.heading("Stock", text="Stock")
-        tree.heading("Precio", text="Precio")
+    def _render_products(self, rows):
+        for item in self.products_tree.get_children():
+            self.products_tree.delete(item)
 
-        tree.column("ID", width=50, anchor="center")
-        tree.column("Nombre", width=300)
-        tree.column("Stock", width=80, anchor="center")
-        tree.column("Precio", width=100, anchor="center")
+        search_term = self.search_var.get().strip().lower()
+        for row in rows:
+            prod_id, nombre, descripcion, precio, stock = row
+            if search_term:
+                haystack = f"{nombre} {descripcion or ''} {prod_id}".lower()
+                if search_term not in haystack:
+                    continue
 
-        tree.grid(row=2, column=0, sticky="nsew", padx=10, pady=5)
-        tree.bind(
-            "<<TreeviewSelect>>", lambda e: self.show_product_detail(tree, detail_frame)
-        )
+            self.product_index[int(prod_id)] = {
+                "id": int(prod_id),
+                "nombre": nombre,
+                "descripcion": descripcion or "",
+                "precio": float(precio or 0),
+                "stock": int(stock or 0),
+            }
+            self.products_tree.insert("", "end", iid=str(prod_id), values=(prod_id, nombre, stock, format_hnl(precio)))
 
-        detail_frame = ttk.LabelFrame(
-            search_win, text="Detalle del Producto", padding=10
-        )
-        detail_frame.grid(row=2, column=1, sticky="nsew", padx=10, pady=5)
+    def filter_products(self):
+        self.load_products()
 
-        self.detail_label = ttk.Label(
-            detail_frame, text="Seleccione un producto", justify=tk.LEFT, wraplength=200
-        )
-        self.detail_label.pack(fill="both", expand=True)
-
-        qty_frame = ttk.Frame(detail_frame)
-        qty_frame.pack(fill="x", pady=10)
-
-        qty_var = tk.IntVar(value=1)
-        ttk.Label(qty_frame, text="Cantidad:").pack(side="left", padx=5)
-        ttk.Spinbox(qty_frame, from_=1, to=100, textvariable=qty_var, width=10).pack(
-            side="left", padx=5
-        )
-
-        ttk.Button(
-            detail_frame,
-            text="Añadir al Carrito",
-            command=lambda: self.add_from_search(tree, qty_var.get(), search_win),
-        ).pack(fill="x", pady=5)
-
-        self.load_products_search(tree)
-
-    def load_products_search(self, tree):
-        """Carga productos en la ventana de búsqueda."""
-        for item in tree.get_children():
-            tree.delete(item)
-
-        products = self.db.fetch(
-            "SELECT id, nombre, stock, precio, descripcion FROM Productos WHERE stock > 0"
-        )
-
-        for prod in products:
-            tree.insert(
-                "",
-                "end",
-                values=(prod[0], prod[1], prod[2], f"${prod[3]:.2f}"),
-                tags=(prod,),
-            )
-
-    def filter_search(self, tree, search_term):
-        """Filtra productos en búsqueda."""
-        for item in tree.get_children():
-            tree.delete(item)
-
-        if not search_term:
-            self.load_products_search(tree)
-            return
-
-        products = self.db.fetch(
-            "SELECT id, nombre, stock, precio, descripcion FROM Productos WHERE stock > 0"
-        )
-
-        search_lower = search_term.lower()
-        for prod in products:
-            if search_lower in prod[1].lower():
-                tree.insert(
-                    "",
-                    "end",
-                    values=(prod[0], prod[1], prod[2], f"${prod[3]:.2f}"),
-                    tags=(prod,),
-                )
-
-    def show_product_detail(self, tree, detail_frame):
-        """Muestra detalle del producto seleccionado."""
-        selected = tree.focus()
+    def on_product_select(self, event=None):
+        selected = self.products_tree.selection()
         if not selected:
             return
 
-        try:
-            values = tree.item(selected, "values")
+        prod_id = int(selected[0])
+        self.selected_product_id = prod_id
+        data = self.product_index.get(prod_id)
+        if not data:
+            return
 
-            if not values or len(values) < 4:
-                self.detail_label.config(
-                    text="Error: No se pudieron cargar los datos del producto"
-                )
-                return
+        self._set_detail_text(
+            f"ID: {data['id']}\n"
+            f"Producto: {data['nombre']}\n"
+            f"Stock: {data['stock']}\n"
+            f"Precio: {format_hnl(data['precio'])}\n\n"
+            f"Descripcion:\n{data['descripcion'] or 'Sin descripcion'}"
+        )
 
-            nombre = values[1]
-            stock = values[2]
-            precio_str = values[3].replace("$", "").replace(",", "")
-            precio = float(precio_str)
+    def _set_detail_text(self, text):
+        self.detail_text.config(state="normal")
+        self.detail_text.delete("1.0", tk.END)
+        self.detail_text.insert("1.0", text)
+        self.detail_text.config(state="disabled")
 
-            prod_id = values[0]
-            result = self.db.fetch(
-                "SELECT descripcion FROM Productos WHERE id = ?", (prod_id,)
-            )
-            desc = result[0][0] if result and result[0] else "Sin descripción"
-
-            detail_text = f"Nombre: {nombre}\n\n"
-            detail_text += f"Stock: {stock} unidades\n\n"
-            detail_text += f"Precio: ${precio:.2f}\n\n"
-            detail_text += f"Descripción:\n{desc or 'Sin descripción'}"
-
-            self.detail_label.config(text=detail_text)
-
-        except (ValueError, IndexError, TypeError) as e:
-            self.detail_label.config(text=f"Error al cargar datos del producto: {e}")
-
-    def add_from_search(self, tree, quantity, window):
-        """Añade producto al carrito desde búsqueda."""
-        selected = tree.focus()
+    def add_selected_product(self):
+        selected = self.products_tree.selection()
         if not selected:
-            messagebox.showwarning("Advertencia", "Seleccione un producto")
+            messagebox.showwarning("Advertencia", "Seleccione un producto del catalogo.")
             return
 
-        if quantity <= 0:
-            messagebox.showerror("Error", "La cantidad debe ser mayor a 0")
+        prod_id = int(selected[0])
+        qty = int(self.qty_var.get() or 0)
+        if qty <= 0:
+            messagebox.showerror("Error", "La cantidad debe ser mayor a 0.")
+            return
+
+        data = self.product_index.get(prod_id)
+        if not data:
+            messagebox.showerror("Error", "No fue posible cargar el producto.")
+            return
+
+        current_qty = self.cart.get(prod_id, {}).get("cantidad", 0)
+        if current_qty + qty > data["stock"]:
+            messagebox.showerror("Stock insuficiente", f"Solo hay {data['stock']} unidades disponibles.")
+            return
+
+        item = self.cart.get(prod_id)
+        if item:
+            item["cantidad"] += qty
+        else:
+            item = {
+                "producto_id": prod_id,
+                "nombre": data["nombre"],
+                "cantidad": qty,
+                "precio_unitario": data["precio"],
+                "descuento_porcentaje": 0.0,
+                "manual": False,
+                "manual_label": "",
+                "auto_label": "",
+            }
+            self.cart[prod_id] = item
+
+        self.recalculate_item_discount(prod_id)
+        self.pending_sale = None
+        self.qty_var.set(1)
+        self.update_cart_display()
+        self.refresh_preview()
+        self.status_var.set(f"{data['nombre']} agregado al carrito.")
+
+    def quick_add(self):
+        self.add_selected_product()
+
+    def on_cart_select(self, event=None):
+        selected = self.cart_tree.selection()
+        if not selected:
+            self._set_cart_editor_state(None)
+            return
+
+        prod_id = int(selected[0])
+        item = self.cart.get(prod_id)
+        if item:
+            self.status_var.set(f"Seleccionado: {item['nombre']}.")
+            self._set_cart_editor_state(prod_id)
+
+    def on_quantity_editor_change(self, event=None):
+        selected = self.cart_tree.selection()
+        if not selected:
+            return
+
+        prod_id = int(selected[0])
+        item = self.cart.get(prod_id)
+        if not item:
+            return
+
+        value = str(self.cart_editor_var.get()).strip()
+        if not value:
             return
 
         try:
-            item_values = tree.item(selected, "values")
+            new_qty = int(value)
+        except ValueError:
+            self.status_var.set("Ingrese una cantidad valida.")
+            return
 
-            if not item_values or len(item_values) < 4:
-                messagebox.showerror("Error", "No se encontraron datos del producto")
-                return
+        if new_qty <= 0:
+            self.status_var.set("La cantidad debe ser mayor a 0.")
+            return
 
-            prod_id = int(item_values[0])
-            nombre = str(item_values[1])
-            stock = int(item_values[2])
-            precio_str = item_values[3].replace("$", "").replace(",", "")
-            precio = float(precio_str)
+        stock = self.product_index.get(prod_id, {}).get("stock", 0)
+        if new_qty > stock:
+            self.status_var.set(f"Stock insuficiente. Disponible: {stock}.")
+            return
 
-            current_qty = self.cart.get(prod_id, {}).get("cantidad", 0)
-            if (current_qty + quantity) > stock:
-                messagebox.showerror(
-                    "Stock Insuficiente", f"Solo hay {stock} unidades disponibles"
-                )
-                return
+        if new_qty == int(item["cantidad"]):
+            self._set_cart_editor_state(prod_id)
+            return
 
-            if prod_id in self.cart:
-                self.cart[prod_id]["cantidad"] += quantity
-            else:
-                self.cart[prod_id] = {
-                    "id": prod_id,
-                    "nombre": nombre,
-                    "precio_unitario": precio,
-                    "cantidad": quantity,
-                    "descuento_porcentaje": 0.0,
-                }
-            window.destroy()
+        item["cantidad"] = new_qty
+        self.recalculate_item_discount(prod_id)
+        self.pending_sale = None
+        self.update_cart_display()
+        self.cart_tree.selection_set(str(prod_id))
+        self.cart_tree.focus(str(prod_id))
+        self.refresh_preview()
+        self.status_var.set(f"Cantidad actualizada para {item['nombre']}.")
+
+    def remove_from_cart(self):
+        selected = self.cart_tree.selection()
+        if not selected:
+            messagebox.showwarning("Advertencia", "Seleccione un producto del carrito.")
+            return
+
+        prod_id = int(selected[0])
+        if prod_id in self.cart:
+            del self.cart[prod_id]
+            self.pending_sale = None
             self.update_cart_display()
-            messagebox.showinfo("Éxito", f"{nombre} añadido al carrito")
+            self.refresh_preview()
+            self.status_var.set("Producto eliminado del carrito.")
+            self._set_cart_editor_state(None)
 
-        except (IndexError, ValueError, TypeError) as e:
-            error_msg = f"Error al obtener datos del producto: {e}"
-            if "item_values" in locals():
-                error_msg += f"\nValues: {item_values}"
-            error_msg += "\nIntente seleccionar el producto nuevamente."
-            messagebox.showerror("Error", error_msg)
+    def clear_cart(self, silent=False):
+        if not self.cart:
+            return
+        if not silent and not messagebox.askyesno("Confirmar", "Limpiar todo el carrito?"):
+            return
+
+        self.cart.clear()
+        self.pending_sale = None
+        self.total_var.set(0.0)
+        self.total_display_var.set(format_hnl(0))
+        self.monto_pagado_var.set("0.00")
+        self.vuelto_var.set(0.0)
+        self.vuelto_display_var.set(format_hnl(0))
+        self.payment_method_var.set("EFECTIVO")
+        self.client_var.set("Cliente General")
+        self.selected_client_id = None
+        self.selected_client_is_wholesale = False
+        self.update_cart_display()
+        self._set_cart_editor_state(None)
+        self.calculate_change()
+        self.refresh_preview()
+
+    def load_clients(self):
+        rows = self.db.fetch(
+            """
+            SELECT id, nombre, apellido, COALESCE(mayorista, 0)
+            FROM Clientes
+            WHERE activo = 1
+            ORDER BY apellido, nombre
+            """
+        )
+        display_names = ["Cliente General"]
+        self.client_data = {"Cliente General": {"id": None, "mayorista": False}}
+
+        for client_id, nombre, apellido, mayorista in rows:
+            label = f"{apellido}, {nombre}"
+            if mayorista:
+                label += " (Mayorista)"
+            display_names.append(label)
+            self.client_data[label] = {"id": client_id, "mayorista": bool(mayorista)}
+
+        self.client_combo["values"] = display_names
+        current_label = self.client_var.get()
+        if current_label not in self.client_data:
+            self.client_var.set("Cliente General")
+            self.selected_client_id = None
+            self.selected_client_is_wholesale = False
+            self.client_combo.current(0)
+        else:
+            self.client_combo.current(display_names.index(current_label))
+
+    def on_client_select(self, event=None):
+        selected = self.client_var.get()
+        data = self.client_data.get(selected, self.client_data["Cliente General"])
+        self.selected_client_id = data["id"]
+        self.selected_client_is_wholesale = bool(data["mayorista"])
+        self.pending_sale = None
+        self.recalculate_cart_discounts()
+        self.update_cart_display()
+        self.refresh_preview()
+        self.calculate_change()
+
+    def get_discount_pct_by_type(self, discount_type, default=0.0):
+        return float(self.discount_by_type.get(str(discount_type).strip().lower(), default) or 0)
+
+    def recalculate_item_discount(self, prod_id):
+        item = self.cart.get(prod_id)
+        if not item or item.get("manual"):
+            return
+
+        qty = int(item["cantidad"])
+        auto_docena = self.get_discount_pct_by_type("Docena", 0.10) if qty >= 12 else 0.0
+        wholesale_context = self.selected_client_is_wholesale or self.sale_mode_var.get() == "ESPECIAL"
+        auto_mayorista = self.get_discount_pct_by_type("Mayorista", 0.15) if wholesale_context else 0.0
+
+        best = max(auto_docena, auto_mayorista)
+        if auto_docena > 0 and auto_mayorista > 0:
+            if abs(auto_docena - auto_mayorista) < 1e-9:
+                source = "Docena/Majorista"
+            else:
+                source = "Docena" if auto_docena > auto_mayorista else "Mayorista"
+        elif auto_docena > 0:
+            source = "Docena"
+        elif auto_mayorista > 0:
+            source = "Mayorista"
+        else:
+            source = ""
+
+        item["descuento_porcentaje"] = best
+        item["manual_label"] = ""
+        item["auto_label"] = source
+
+    def recalculate_cart_discounts(self):
+        for prod_id in list(self.cart):
+            self.recalculate_item_discount(prod_id)
+
+    def apply_selected_discount(self, event=None):
+        selected = self.cart_tree.selection()
+        if not selected:
+            messagebox.showwarning("Advertencia", "Seleccione un producto del carrito.")
+            return
+
+        prod_id = int(selected[0])
+        item = self.cart.get(prod_id)
+        if not item:
+            return
+
+        discount_idx = self.discount_combo.current()
+        discount_info = self.discount_data.get(discount_idx)
+        if not discount_info:
+            return
+
+        pct = float(discount_info["porcentaje"] or 0)
+        if pct <= 0:
+            item["manual"] = False
+            item["manual_label"] = ""
+            self.recalculate_item_discount(prod_id)
+        else:
+            item["manual"] = True
+            item["manual_label"] = discount_info["nombre"]
+            item["descuento_porcentaje"] = pct
+            item["auto_label"] = ""
+
+        self.update_cart_display()
+        self.refresh_preview()
+        self.status_var.set(f"Descuento {'removido' if pct <= 0 else discount_info['nombre']} en {item['nombre']}.")
+        self.pending_sale = None
+
+    def apply_discount_to_all(self):
+        if not self.cart:
+            messagebox.showwarning("Advertencia", "El carrito esta vacio.")
+            return
+
+        discount_idx = self.discount_combo.current()
+        discount_info = self.discount_data.get(discount_idx)
+        if not discount_info:
+            return
+
+        pct = float(discount_info["porcentaje"] or 0)
+        if pct > 0 and not messagebox.askyesno("Confirmar", f"Aplicar '{discount_info['nombre']}' ({int(round(pct * 100))}%) a todo el carrito?"):
+            return
+
+        for prod_id in self.cart:
+            item = self.cart[prod_id]
+            if pct <= 0:
+                item["manual"] = False
+                item["manual_label"] = ""
+                self.recalculate_item_discount(prod_id)
+            else:
+                item["manual"] = True
+                item["manual_label"] = discount_info["nombre"]
+                item["descuento_porcentaje"] = pct
+                item["auto_label"] = ""
+
+        self.update_cart_display()
+        self.refresh_preview()
+        self.status_var.set("Descuento masivo aplicado.")
+        self.pending_sale = None
+
+    def remove_all_discounts(self):
+        if not self.cart:
+            messagebox.showwarning("Advertencia", "El carrito esta vacio.")
+            return
+
+        if not messagebox.askyesno("Confirmar", "Remover todos los descuentos manuales?"):
+            return
+
+        for prod_id in self.cart:
+            item = self.cart[prod_id]
+            item["manual"] = False
+            item["manual_label"] = ""
+            self.recalculate_item_discount(prod_id)
+
+        self.discount_combo.current(0)
+        self.update_cart_display()
+        self.refresh_preview()
+        self.status_var.set("Descuentos removidos.")
+        self.pending_sale = None
 
     def update_cart_display(self):
-        """Actualiza la visualización del carrito."""
         for item in self.cart_tree.get_children():
             self.cart_tree.delete(item)
 
-        total = 0.0
-        total_descuentos = 0.0
-        productos_con_descuento = 0
+        line_total = 0.0
+        auto_count = 0
+        manual_count = 0
+        info_sources = set()
 
-        for prod_id, data in self.cart.items():
-            cant = data["cantidad"]
-            precio = data["precio_unitario"]
-            desc_pct = data["descuento_porcentaje"]
+        for prod_id, item in self.cart.items():
+            qty = int(item["cantidad"])
+            price = float(item["precio_unitario"])
+            pct = float(item.get("descuento_porcentaje", 0))
+            subtotal = (price * qty) * (1 - pct)
+            line_total += subtotal
 
-            desc_monto = (precio * cant) * desc_pct
-            subtotal = (precio * cant) - desc_monto
-            total += subtotal
-            total_descuentos += desc_monto
-
-            if desc_pct > 0:
-                productos_con_descuento += 1
+            if item.get("manual"):
+                manual_count += 1
+                info_sources.add("Manual")
+                desc_text = f"{int(round(pct * 100))}%"
+            elif pct > 0:
+                auto_count += 1
+                info_sources.add(item.get("auto_label") or "Auto")
+                desc_text = f"{int(round(pct * 100))}%"
+            else:
+                desc_text = "0%"
 
             self.cart_tree.insert(
                 "",
                 "end",
-                iid=prod_id,
-                values=(
-                    prod_id,
-                    data["nombre"],
-                    cant,
-                    f"${precio:.2f}",
-                    f"{int(desc_pct*100)}%",
-                    f"${subtotal:.2f}",
-                ),
+                iid=str(prod_id),
+                values=(prod_id, item["nombre"], qty, format_hnl(price), desc_text, format_hnl(subtotal)),
             )
 
-        self.total_var.set(round(total, 2))
-
-        if productos_con_descuento > 0:
-            info_text = f"{productos_con_descuento} productos con descuento - Ahorro total: ${total_descuentos:.2f}"
-            self.discount_info_label.config(text=info_text, foreground="#28a745")
+        invoice = self._calculate_invoice_totals(validate_payment=False)
+        self.total_var.set(round(invoice.total, 2))
+        self.total_display_var.set(format_hnl(invoice.total))
+        if self.cart:
+            units = sum(int(item["cantidad"]) for item in self.cart.values())
+            self.cart_items_var.set(f"{units} unidades en {len(self.cart)} productos")
         else:
-            self.discount_info_label.config(text="", foreground="#666666")
+            self.cart_items_var.set("0 productos")
 
+        if manual_count:
+            source = "Manual"
+        elif auto_count:
+            source = "/".join(sorted(info_sources)) if info_sources else "Auto"
+        else:
+            source = "Sin descuento"
+
+        self.discount_info_label.config(text=f"Desc.: {source}. Auto: Docena/Majorista cuando aplique. Manual no se sobrescribe.", foreground="#2e7d32" if line_total else "#666")
+        self._refresh_cart_editor()
         self.calculate_change()
 
     def calculate_change(self, event=None):
-        """Calcula el vuelto."""
-        try:
-            total = self.total_var.get()
-            pagado = self.monto_pagado_var.get()
-            vuelto = pagado - total
+        invoice = self._calculate_invoice_totals(validate_payment=False)
+        total = float(invoice.total)
+        self.total_var.set(total)
+        self.total_display_var.set(format_hnl(total))
 
-            self.vuelto_var.set(round(max(0, vuelto), 2))
-
-            if vuelto < 0:
-                self.status_label.config(
-                    text=f"Falta: ${abs(vuelto):.2f}", foreground="#dc3545"
-                )
-            else:
-                self.status_label.config(
-                    text="Listo para procesar", foreground="#28a745"
-                )
-        except:
-            self.vuelto_var.set(0.0)
-
-    def load_clients(self):
-        """Carga la lista de clientes activos."""
-        try:
-            # Opción para venta sin cliente específico
-            clients = [("Cliente General", None)]
-
-            # Cargar clientes activos de la base de datos
-            client_data = self.db.fetch(
-                "SELECT id, nombre, apellido FROM Clientes WHERE activo = 1 ORDER BY apellido, nombre"
-            )
-
-            for client in client_data:
-                client_id, nombre, apellido = client
-                display_name = f"{apellido}, {nombre}"
-                clients.append((display_name, client_id))
-
-            # Actualizar combobox
-            client_names = [client[0] for client in clients]
-            self.client_combo["values"] = client_names
-
-            # Guardar referencia para obtener IDs
-            self.client_data = {client[0]: client[1] for client in clients}
-
-        except Exception as e:
-            messagebox.showerror("Error", f"Error al cargar clientes: {e}")
-
-    def on_client_select(self, event=None):
-        """Maneja la selección de un cliente."""
-        selected_name = self.client_var.get()
-        self.selected_client_id = self.client_data.get(selected_name)
-
-    def remove_from_cart(self):
-        """Elimina producto del carrito."""
-        selected = self.cart_tree.focus()
-        if not selected:
-            messagebox.showwarning("Advertencia", "Seleccione un producto")
-            return
-
-        try:
-            prod_id = int(self.cart_tree.item(selected, "values")[0])
-            if prod_id in self.cart:
-                del self.cart[prod_id]
-                self.update_cart_display()
-            else:
-                messagebox.showerror("Error", "Producto no encontrado en el carrito")
-        except (ValueError, IndexError) as e:
-            messagebox.showerror("Error", f"Error al eliminar producto: {e}")
-
-    def clear_cart(self):
-        """Limpia todo el carrito."""
-        if not self.cart:
-            return
-
-        if messagebox.askyesno("Confirmar", "¿Limpiar todo el carrito?"):
-            self.cart = {}
-            self.update_cart_display()
-            self.monto_pagado_var.set(0.0)
-            self.discount_combo.set("Sin descuento")
-            # Resetear cliente a "Cliente General"
-            self.client_var.set("Cliente General")
-            self.selected_client_id = None
-
-    def apply_selected_discount(self, event=None):
-        """Aplica el descuento seleccionado del combobox al producto seleccionado."""
-        selected = self.cart_tree.focus()
-        if not selected:
-            messagebox.showwarning("Advertencia", "Seleccione un producto del carrito")
-            return
-
-        try:
-            prod_id = int(self.cart_tree.item(selected, "values")[0])
-
-            if prod_id not in self.cart:
-                messagebox.showerror("Error", "Producto no encontrado en el carrito")
-                return
-
-            selected_index = self.discount_combo.current()
-            if selected_index == -1:
-                return
-
-            discount_info = self.discount_data.get(selected_index)
-            if not discount_info:
-                messagebox.showerror("Error", "Descuento no válido")
-                return
-
-            descuento_porcentaje = discount_info["porcentaje"]
-            self.cart[prod_id]["descuento_porcentaje"] = descuento_porcentaje
-
-            self.update_cart_display()
-
-            if descuento_porcentaje > 0:
-                messagebox.showinfo(
-                    "Descuento Aplicado",
-                    f"Descuento '{discount_info['nombre']}' aplicado: {int(descuento_porcentaje * 100)}%",
-                )
-            else:
-                messagebox.showinfo(
-                    "Descuento Removido", "Descuento removido del producto"
-                )
-
-        except (ValueError, IndexError) as e:
-            messagebox.showerror("Error", f"Error al aplicar descuento: {e}")
-
-    def apply_discount_to_all(self):
-        """Aplica el descuento seleccionado a todos los productos del carrito."""
-        if not self.cart:
-            messagebox.showwarning("Advertencia", "El carrito está vacío")
-            return
-
-        selected_index = self.discount_combo.current()
-        if selected_index == -1:
-            messagebox.showwarning("Advertencia", "Seleccione un descuento primero")
-            return
-
-        discount_info = self.discount_data.get(selected_index)
-        if not discount_info:
-            messagebox.showerror("Error", "Descuento no válido")
-            return
-
-        discount_name = discount_info["nombre"]
-        discount_pct = int(discount_info["porcentaje"] * 100)
-
-        if discount_pct > 0:
-            mensaje = f"¿Aplicar '{discount_name}' ({discount_pct}%) a todos los {len(self.cart)} productos del carrito?"
+        metodo_pago = (self.payment_method_var.get() or "NO_DEFINIDO").upper()
+        if metodo_pago == "TRANSFERENCIA":
+            self.monto_pagado_var.set(f"{invoice.monto_recibido:.2f}")
+            if self._widget_exists(getattr(self, "monto_entry", None)):
+                self.monto_entry.state(["disabled"])
         else:
-            mensaje = f"¿Remover descuentos de todos los {len(self.cart)} productos del carrito?"
+            if self._widget_exists(getattr(self, "monto_entry", None)):
+                self.monto_entry.state(["!disabled"])
 
-        if not messagebox.askyesno("Confirmar Descuento Masivo", mensaje):
-            return
+        self.vuelto_var.set(round(invoice.vuelto, 2))
+        self.vuelto_display_var.set(format_hnl(invoice.vuelto))
 
-        try:
-            descuento_porcentaje = discount_info["porcentaje"]
-            productos_afectados = 0
+        if total <= 0:
+            self.status_var.set("Agregue productos al carrito.")
+            self.finalize_button.state(["disabled"])
+        elif invoice.validation_errors and metodo_pago == "EFECTIVO":
+            faltante = total - self._parse_float(self.monto_pagado_var.get())
+            self.status_var.set(f"Faltan {format_hnl(faltante)}. Presione Vender para abrir el cobro.")
+            self.finalize_button.state(["!disabled"])
+        elif metodo_pago == "TRANSFERENCIA":
+            self.status_var.set("Transferencia validada. El monto recibido se ajusta al total y el vuelto es L 0.00.")
+            self.finalize_button.state(["!disabled"])
+        else:
+            self.status_var.set("Pago valido. Puede continuar con Vender.")
+            self.finalize_button.state(["!disabled"])
 
-            for prod_id in self.cart:
-                self.cart[prod_id]["descuento_porcentaje"] = descuento_porcentaje
-                productos_afectados += 1
+        if self.preview_visible:
+            self.refresh_preview()
+        if self.payment_modal_status_var is not None:
+            self.payment_modal_status_var.set(self.status_var.get())
 
-            self.update_cart_display()
+    def toggle_preview(self):
+        if self.preview_visible:
+            self._close_preview_window()
+        else:
+            self._open_preview_window()
 
-            if descuento_porcentaje > 0:
-                messagebox.showinfo(
-                    "Descuento Aplicado",
-                    f"Descuento '{discount_name}' ({discount_pct}%) aplicado a {productos_afectados} productos",
-                )
-            else:
-                messagebox.showinfo(
-                    "Descuentos Removidos",
-                    f"Descuentos removidos de {productos_afectados} productos",
-                )
+    def show_receipt_preview(self, *args, **kwargs):
+        if not self.preview_visible:
+            self.toggle_preview()
+        self.refresh_preview()
 
-        except Exception as e:
-            messagebox.showerror("Error", f"Error al aplicar descuento masivo: {e}")
-
-    def remove_all_discounts(self):
-        """Remueve todos los descuentos del carrito."""
-        if not self.cart:
-            messagebox.showwarning("Advertencia", "El carrito está vacío")
-            return
-
-        productos_con_descuento = sum(
-            1 for item in self.cart.values() if item.get("descuento_porcentaje", 0) > 0
-        )
-
-        if productos_con_descuento == 0:
-            messagebox.showinfo(
-                "Información", "No hay productos con descuentos en el carrito"
-            )
-            return
-
-        if not messagebox.askyesno(
-            "Confirmar", f"¿Remover descuentos de {productos_con_descuento} productos?"
-        ):
-            return
-
-        try:
-            productos_afectados = 0
-            for prod_id in self.cart:
-                if self.cart[prod_id].get("descuento_porcentaje", 0) > 0:
-                    self.cart[prod_id]["descuento_porcentaje"] = 0.0
-                    productos_afectados += 1
-
-            self.update_cart_display()
-            self.discount_combo.set("Sin descuento")
-
-            messagebox.showinfo(
-                "Descuentos Removidos",
-                f"Descuentos removidos de {productos_afectados} productos",
-            )
-
-        except Exception as e:
-            messagebox.showerror("Error", f"Error al remover descuentos: {e}")
-
-    def finalize_sale(self):
-        """Muestra vista previa del recibo SIN procesar la venta aún."""
-        if not self.cart:
-            messagebox.showwarning("Advertencia", "El carrito está vacío")
-            return
-
-        total = self.total_var.get()
-        pagado = self.monto_pagado_var.get()
-
-        if pagado < total:
-            messagebox.showerror("Error", "Monto insuficiente")
-            return
-
-        vuelto = self.vuelto_var.get()
-        venta_id = (
-            f"V-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(100, 999)}"
-        )
-        fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        # Guardar datos temporales para confirmar después
-        self.pending_sale = {
-            "venta_id": venta_id,
-            "fecha": fecha,
-            "total": total,
-            "pagado": pagado,
-            "vuelto": vuelto,
+    def _build_sale_snapshot(self, validate_payment=True):
+        invoice = self._calculate_invoice_totals(validate_payment=validate_payment)
+        return {
+            "venta_id": f"V-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(100, 999)}",
+            "fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "total": float(invoice.total),
+            "pagado": float(invoice.monto_recibido),
+            "vuelto": float(invoice.vuelto),
             "cliente_id": self.selected_client_id,
-            "cart_snapshot": dict(self.cart),  # Copia del carrito
+            "metodo_pago": self.payment_method_var.get() or "NO_DEFINIDO",
+            "modo": self.sale_mode_var.get(),
+            "cart_snapshot": {prod_id: dict(item) for prod_id, item in self.cart.items()},
+            "tax_included": self._invoice_prices_include_tax(),
         }
 
-        # Mostrar ventana de vista previa (sin procesar la venta)
-        self.show_receipt_preview(venta_id, total, pagado, vuelto, fecha)
-
-    def show_receipt_preview(self, venta_id, total, pagado, vuelto, fecha):
-        """Muestra ventana profesional de vista previa del recibo CON confirmación."""
-        preview_win = Toplevel(self.app)
-        preview_win.title("Vista Previa - Recibo de Venta")
-        preview_win.geometry("1000x750")
-        preview_win.resizable(True, True)
-
-        # Variables de estado
-        self.current_view_mode = tk.StringVar(value="ticket")
-
-        # Frame principal
-        main_frame = ttk.Frame(preview_win, padding="20")
-        main_frame.pack(fill="both", expand=True)
-
-        # Título y alerta
-        title_frame = ttk.Frame(main_frame)
-        title_frame.pack(fill="x", pady=(0, 15))
-
-        ttk.Label(
-            title_frame,
-            text="⚠ VISTA PREVIA - Venta NO Confirmada",
-            font=("Arial", 16, "bold"),
-            foreground="#ff6e40",
-        ).pack(side="left")
-
-        ttk.Label(
-            title_frame, text=f"ID: {venta_id}", font=("Arial", 10), foreground="#666"
-        ).pack(side="right")
-
-        ttk.Separator(main_frame, orient="horizontal").pack(fill="x", pady=10)
-
-        # Frame de contenido: vista previa (izq) y opciones (der)
-        content_frame = ttk.Frame(main_frame)
-        content_frame.pack(fill="both", expand=True)
-
-        content_frame.grid_columnconfigure(0, weight=3)
-        content_frame.grid_columnconfigure(1, weight=1)
-        content_frame.grid_rowconfigure(0, weight=1)
-
-        # PANEL IZQUIERDO: Vista previa
-        left_panel = ttk.Frame(content_frame)
-        left_panel.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
-
-        # Selector de modo de vista
-        view_selector_frame = ttk.LabelFrame(
-            left_panel, text="Modo de Vista", padding=10
-        )
-        view_selector_frame.pack(fill="x", pady=(0, 10))
-
-        ttk.Radiobutton(
-            view_selector_frame,
-            text="Vista Previa Normal (Ticket 80mm)",
-            variable=self.current_view_mode,
-            value="ticket",
-            command=lambda: self.update_preview_display(
-                preview_text, venta_id, total, pagado, vuelto, fecha
-            ),
-        ).pack(side="left", padx=10)
-
-        ttk.Radiobutton(
-            view_selector_frame,
-            text="Vista Previa Carta (Letter)",
-            variable=self.current_view_mode,
-            value="letter",
-            command=lambda: self.update_preview_display(
-                preview_text, venta_id, total, pagado, vuelto, fecha
-            ),
-        ).pack(side="left", padx=10)
-
-        # Área de vista previa
-        preview_frame = ttk.LabelFrame(
-            left_panel, text="Vista Previa del Recibo", padding=10
-        )
-        preview_frame.pack(fill="both", expand=True)
-
-        # Crear canvas con scrollbar
-        canvas = tk.Canvas(
-            preview_frame,
-            bg="#ffffff",
-            highlightthickness=1,
-            highlightbackground="#cccccc",
-        )
-        scrollbar_y = ttk.Scrollbar(
-            preview_frame, orient="vertical", command=canvas.yview
-        )
-        scrollbar_x = ttk.Scrollbar(
-            preview_frame, orient="horizontal", command=canvas.xview
-        )
-
-        preview_text = tk.Text(
-            canvas,
-            font=("Courier New", 9),
-            wrap=tk.NONE,
-            bg="#ffffff",
-            relief="flat",
-            padx=20,
-            pady=20,
-        )
-
-        scrollbar_y.pack(side="right", fill="y")
-        scrollbar_x.pack(side="bottom", fill="x")
-        canvas.pack(side="left", fill="both", expand=True)
-
-        canvas.create_window((0, 0), window=preview_text, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar_y.set, xscrollcommand=scrollbar_x.set)
-
-        preview_text.bind(
-            "<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
-
-        # Cargar vista inicial
-        self.update_preview_display(
-            preview_text, venta_id, total, pagado, vuelto, fecha
-        )
-
-        # PANEL DERECHO: Opciones y acciones
-        right_panel = ttk.Frame(content_frame)
-        right_panel.grid(row=0, column=1, sticky="nsew", padx=(10, 0))
-
-        # Sección de impresora
-        printer_frame = ttk.LabelFrame(
-            right_panel, text="Configuración de Impresora", padding=15
-        )
-        printer_frame.pack(fill="x", pady=(0, 10))
-
-        # Detectar impresora
-        printer_detected, printer_name = self.detect_printer()
-
-        self.printer_status_label = ttk.Label(
-            printer_frame,
-            text="Buscando impresoras...",
-            font=("Arial", 10),
-            foreground="#666",
-        )
-        self.printer_status_label.pack(anchor="w", pady=(0, 10))
-
-        self.update_printer_status(printer_detected, printer_name)
-
-        ttk.Button(
-            printer_frame,
-            text="🔍 Buscar Impresoras",
-            command=lambda: self.search_printers_dialog(preview_win),
-        ).pack(fill="x", pady=5)
-
-        # Opciones de tamaño de impresión
-        ttk.Label(
-            printer_frame, text="Tamaño de Impresión:", font=("Arial", 9, "bold")
-        ).pack(anchor="w", pady=(10, 5))
-
-        self.paper_size_var = tk.StringVar(value="ticket")
-        ttk.Radiobutton(
-            printer_frame,
-            text="Ticket (80mm)",
-            variable=self.paper_size_var,
-            value="ticket",
-        ).pack(anchor="w", padx=10)
-
-        ttk.Radiobutton(
-            printer_frame,
-            text="Carta (Letter)",
-            variable=self.paper_size_var,
-            value="letter",
-        ).pack(anchor="w", padx=10)
-
-        # Sección de guardado
-        save_frame = ttk.LabelFrame(
-            right_panel, text="Configuración de Guardado", padding=15
-        )
-        save_frame.pack(fill="x", pady=(0, 10))
-
-        saved_path = self.db.get_config("recibo_save_path", "")
-
-        ttk.Label(save_frame, text="Carpeta:", font=("Arial", 9, "bold")).pack(
-            anchor="w", pady=(0, 3)
-        )
-
-        self.path_label = ttk.Label(
-            save_frame,
-            text=saved_path if saved_path else "No configurada",
-            font=("Arial", 8),
-            foreground="#666",
-            wraplength=180,
-        )
-        self.path_label.pack(anchor="w", pady=(0, 10))
-
-        ttk.Button(
-            save_frame,
-            text="📁 Cambiar Carpeta",
-            command=lambda: self.change_save_folder(preview_win),
-        ).pack(fill="x")
-
-        # Botones de acción
-        action_frame = ttk.LabelFrame(right_panel, text="Acciones", padding=15)
-        action_frame.pack(fill="both", expand=True, pady=(0, 0))
-
-        ttk.Label(
-            action_frame,
-            text="La venta NO se ha procesado aún",
-            font=("Arial", 9, "bold"),
-            foreground="#dc3545",
-        ).pack(pady=(0, 15))
-
-        ttk.Button(
-            action_frame,
-            text="✓ CONFIRMAR VENTA",
-            command=lambda: self.confirm_sale_and_process(
-                preview_win, venta_id, total, pagado, vuelto, fecha
-            ),
-            style="Accent.TButton",
-        ).pack(fill="x", pady=5)
-
-        ttk.Separator(action_frame, orient="horizontal").pack(fill="x", pady=10)
-
-        ttk.Button(
-            action_frame,
-            text="❌ Cancelar Venta",
-            command=lambda: self.cancel_sale(preview_win),
-        ).pack(fill="x", pady=5)
-
-        # Info
-        info_label = ttk.Label(
-            action_frame,
-            text="💡 Confirme la venta para procesar el pago y actualizar inventario",
-            font=("Arial", 8),
-            foreground="#666",
-            wraplength=180,
-            justify="left",
-        )
-        info_label.pack(pady=(15, 0))
-
-    def update_preview_display(
-        self, text_widget, venta_id, total, pagado, vuelto, fecha
-    ):
-        """Actualiza la vista previa según el modo seleccionado."""
-        text_widget.config(state="normal")
-        text_widget.delete("1.0", tk.END)
-
-        mode = self.current_view_mode.get()
-
-        if mode == "ticket":
-            content = self.format_receipt_ticket(venta_id, total, pagado, vuelto, fecha)
-            text_widget.config(width=50)
-        else:  # letter
-            content = self.format_receipt_letter(venta_id, total, pagado, vuelto, fecha)
-            text_widget.config(width=85)
-
-        text_widget.insert("1.0", content)
-        text_widget.config(state="disabled")
-
-    def get_client_info_for_receipt(self, venta_id):
-        """Método auxiliar para obtener información del cliente para previsualización."""
-        cliente_info = None
-        cliente_id = None
-
-        # Intentar obtener cliente_id desde pending_sale
-        if hasattr(self, "pending_sale") and self.pending_sale:
-            cliente_id = self.pending_sale.get("cliente_id")
-
-        # Si no hay cliente_id en pending_sale, intentar obtenerlo de la venta en la BD
-        if not cliente_id and venta_id:
-            venta_data = self.db.fetch(
-                "SELECT id_cliente FROM Ventas WHERE id = ?", (venta_id,)
-            )
-            if venta_data and venta_data[0][0]:
-                cliente_id = venta_data[0][0]
-
-        # Obtener datos del cliente si existe
-        if cliente_id:
-            cliente_data = self.db.fetch(
-                "SELECT nombre, apellido, dni, telefono, direccion FROM Clientes WHERE id = ?",
-                (cliente_id,),
-            )
-            if cliente_data:
-                cliente_info = {
-                    "nombre": cliente_data[0][0],
-                    "apellido": cliente_data[0][1],
-                    "dni": cliente_data[0][2],
-                    "telefono": cliente_data[0][3],
-                    "direccion": cliente_data[0][4],
-                }
-
-        return cliente_info
-
-    def format_receipt_ticket(self, venta_id, total, pagado, vuelto, fecha):
-        """Formato de recibo para ticket (80mm) con diseño idéntico al de carta."""
-        lines = []
-        width = 40  # Ticket width
-
-        # Obtener información del cliente
-        cliente_info = self.get_client_info_for_receipt(venta_id)
-
-        # Encabezado de la empresa
-        lines.append("=" * width)
-        lines.append("R.T.N.: 12011972000081".center(width))
-        lines.append("PODEGA Y COMERCIAL RIVERA".center(width))
-        lines.append("TEL.: 2774-1192 / 9967-7300".center(width))
-        lines.append(
-            "DIRECCIÓN: Bo. La Mercedes, Colonia la Ermita, 1ra Calle, 14-62, frente a Farmacia Santa, La Paz, Honduras".center(
-                width
-            )
-        )
-        lines.append("EMAIL: freddyrivera2015@gmail.com".center(width))
-        lines.append("=" * width)
-        lines.append("")
-        lines.append("FACTURA".center(width))
-        lines.append(f"No. 0000-0001-{venta_id.split('-')[-1]}".center(width))
-        lines.append("Página 1 de 1".center(width))
-        lines.append("=" * width)
-        lines.append("")
-
-        # Información del cliente (si existe)
-        if cliente_info:
-            lines.append("DATOS DEL CLIENTE:".center(width))
-            lines.append("-" * width)
-            lines.append(f"Nombre: {cliente_info['nombre']} {cliente_info['apellido']}")
-            if cliente_info["dni"]:
-                lines.append(f"DNI: {cliente_info['dni']}")
-            if cliente_info["telefono"]:
-                lines.append(f"Tel: {cliente_info['telefono']}")
-            if cliente_info["direccion"]:
-                # Dividir dirección larga en múltiples líneas
-                direccion = cliente_info["direccion"]
-                if len(direccion) > width:
-                    for i in range(0, len(direccion), width):
-                        lines.append(f"Dir: {direccion[i:i+width]}")
-                else:
-                    lines.append(f"Dir: {direccion}")
-            lines.append("=" * width)
-            lines.append("")
-
-        # Encabezados de tabla
-        lines.append(
-            f"{'Cant.':<5}{'Código':<10}{'Producto':<12}{'P':<1}{'Unidad':>4}{'Total':>7}"
-        )
-        lines.append("-" * width)
-
-        # Items de la venta
-        cart_data = self.pending_sale.get("cart_snapshot", self.cart)
-        subtotal_gravado = 0.0
-
-        for prod_id, data in cart_data.items():
-            cant = data["cantidad"]
-            precio = data["precio_unitario"]
-            desc_pct = data["descuento_porcentaje"]
-            subtotal = (precio * cant) * (1 - desc_pct)
-            subtotal_gravado += subtotal
-
-            codigo = str(prod_id).zfill(8)  # Código reducido para ticket
-            nombre = data["nombre"][:10]  # Limitar nombre a 10 caracteres
-
-            lines.append(
-                f"{cant:<5}{codigo:<10}{nombre:<12}{'G':<1}L{precio:>4.2f}L{subtotal:>6.2f}"
-            )
-
-        # Totales
-        lines.append("-" * width)
-        lines.append(f"{'':>30}{'TOTAL:'}")
-        lines.append(f"{'':>28}L{total:>7.2f}")
-        lines.append("")
-
-        # Monto en letras
-        total_entero = int(total)
-        total_centavos = int(round((total - total_entero) * 100))
-        lines.append(
-            f"SON: {self.number_to_words(total_entero).upper()} LEMPIRAS CON {total_centavos:02d}/100"
-        )
-        lines.append("")
-
-        # Información adicional
-        lines.append("Orden de Compra Exenta:")
-        lines.append("Constancia Registro Exento:")
-        lines.append("Desc. y Rebajas Otorgados:")
-        lines.append("")
-
-        # Resumen de impuestos (ejemplo fijo: 15%)
-        impuesto_15 = subtotal_gravado * 0.15
-        total_con_impuesto = subtotal_gravado + impuesto_15
-
-        lines.append(f"{'Concepto':<15}{'Total':>10}")
-        lines.append("-" * 25)
-        lines.append(f"{'Sub Total':<15}L{subtotal_gravado:>8.2f}")
-        lines.append(f"{'Exento':<15}L{0.00:>8.2f}")
-        lines.append(f"{'Gravado 15%':<15}L{subtotal_gravado:>8.2f}")
-        lines.append(f"{'Gravado 18%':<15}L{0.00:>8.2f}")
-        lines.append(f"{'Impuesto 15%':<15}L{impuesto_15:>8.2f}")
-        lines.append(f"{'Impuesto 18%':<15}L{0.00:>8.2f}")
-        lines.append("-" * 25)
-        lines.append(f"{'TOTAL:':<15}L{total_con_impuesto:>8.2f}")
-        lines.append("")
-
-        # Información de pago
-        lines.append(f"Monto Recibido: L{pagado:.2f}")
-        lines.append(f"Vuelto: L{vuelto:.2f}")
-        lines.append("")
-
-        lines.append("Observaciones:")
-        lines.append("")
-        lines.append("=" * width)
-        lines.append("Original - Cliente".center(width))
-        lines.append("=" * width)
-
-        return "\n".join(lines)
-
-    def format_receipt_letter(self, venta_id, total, pagado, vuelto, fecha):
-        """Formato de factura profesional para tamaño carta (según ejemplo dado)."""
-        lines = []
-        width = 80
-
-        # Obtener información del cliente
-        cliente_info = self.get_client_info_for_receipt(venta_id)
-
-        # Encabezado de la empresa
-        lines.append("=" * width)
-        lines.append("R.T.N.: 12011972000081".center(width))
-        lines.append("PODEGA Y COMERCIAL RIVERA".center(width))
-        lines.append("TEL.: 2774-1192 / 9967-7300".center(width))
-        lines.append(
-            "DIRECCIÓN: Bo. La Mercedes, Colonia la Ermita, 1ra Calle, 14-62, frente a Farmacia Santa, La Paz, Honduras".center(
-                width
-            )
-        )
-        lines.append("EMAIL: freddyrivera2015@gmail.com".center(width))
-        lines.append("=" * width)
-        lines.append("")
-        lines.append("FACTURA".center(width))
-        lines.append(f"No. 0000-0001-{venta_id.split('-')[-1]}".center(width))
-        lines.append("Página 1 de 1".center(width))
-        lines.append("=" * width)
-        lines.append("")
-
-        # Información del cliente (si existe)
-        if cliente_info:
-            lines.append("DATOS DEL CLIENTE:".center(width))
-            lines.append("-" * width)
-            lines.append(f"Nombre: {cliente_info['nombre']} {cliente_info['apellido']}")
-            if cliente_info["dni"]:
-                lines.append(f"DNI: {cliente_info['dni']}")
-            if cliente_info["telefono"]:
-                lines.append(f"Teléfono: {cliente_info['telefono']}")
-            if cliente_info["direccion"]:
-                lines.append(f"Dirección: {cliente_info['direccion']}")
-            lines.append("=" * width)
-            lines.append("")
-
-        # Encabezados de tabla
-        lines.append(
-            f"{'Cant.':<8}{'Código':<18}{'Producto':<30}{'P':<3}{'Unidad':>10}{'Total':>11}"
-        )
-        lines.append("-" * width)
-
-        # Items de la venta
-        cart_data = self.pending_sale.get("cart_snapshot", self.cart)
-        subtotal_gravado = 0.0
-
-        for prod_id, data in cart_data.items():
-            cant = data["cantidad"]
-            precio = data["precio_unitario"]
-            desc_pct = data["descuento_porcentaje"]
-            subtotal = (precio * cant) * (1 - desc_pct)
-            subtotal_gravado += subtotal
-
-            codigo = str(prod_id).zfill(13)  # Código de 13 dígitos
-            nombre = data["nombre"][:28]  # Limitar nombre a 28 caracteres
-
-            lines.append(
-                f"{cant:<8}{codigo:<18}{nombre:<30}{'G':<3}L{precio:>9.2f}L{subtotal:>9.2f}"
-            )
-
-        # Totales
-        lines.append("-" * width)
-        lines.append(f"{'':>70}{'TOTAL:'}")
-        lines.append(f"{'':>68}L{total:>10.2f}")
-        lines.append("")
-
-        # Monto en letras
-        total_entero = int(total)
-        total_centavos = int(round((total - total_entero) * 100))
-        lines.append(
-            f"SON: {self.number_to_words(total_entero).upper()} LEMPIRAS CON {total_centavos:02d}/100"
-        )
-        lines.append("")
-
-        # Información adicional
-        lines.append("Orden de Compra Exenta:")
-        lines.append("Constancia Registro Exento:")
-        lines.append("Desc. y Rebajas Otorgados:")
-        lines.append("")
-
-        # Resumen de impuestos (ejemplo fijo: 15%)
-        impuesto_15 = subtotal_gravado * 0.15
-        total_con_impuesto = subtotal_gravado + impuesto_15
-
-        lines.append(f"{'Concepto':<30}{'Total':>15}")
-        lines.append("-" * 45)
-        lines.append(f"{'Sub Total':<30}L{subtotal_gravado:>13.2f}")
-        lines.append(f"{'Exento':<30}L{0.00:>13.2f}")
-        lines.append(f"{'Gravado 15%':<30}L{subtotal_gravado:>13.2f}")
-        lines.append(f"{'Gravado 18%':<30}L{0.00:>13.2f}")
-        lines.append(f"{'Impuesto 15%':<30}L{impuesto_15:>13.2f}")
-        lines.append(f"{'Impuesto 18%':<30}L{0.00:>13.2f}")
-        lines.append("-" * 45)
-        lines.append(f"{'TOTAL:':<30}L{total_con_impuesto:>13.2f}")
-        lines.append("")
-
-        # Información de pago
-        lines.append(f"Monto Recibido: L{pagado:.2f}")
-        lines.append(f"Vuelto: L{vuelto:.2f}")
-        lines.append("")
-
-        lines.append("Observaciones:")
-        lines.append("")
-        lines.append("=" * width)
-        lines.append("Original - Cliente".center(width))
-        lines.append("=" * width)
-
-        return "\n".join(lines)
-
-    def number_to_words(self, n):
-        """Convierte número a palabras (simplificado para español)."""
-        if n == 0:
-            return "cero"
-
-        unidades = [
-            "",
-            "un",
-            "dos",
-            "tres",
-            "cuatro",
-            "cinco",
-            "seis",
-            "siete",
-            "ocho",
-            "nueve",
-        ]
-        decenas = [
-            "",
-            "diez",
-            "veinte",
-            "treinta",
-            "cuarenta",
-            "cincuenta",
-            "sesenta",
-            "setenta",
-            "ochenta",
-            "noventa",
-        ]
-        centenas = [
-            "",
-            "ciento",
-            "doscientos",
-            "trescientos",
-            "cuatrocientos",
-            "quinientos",
-            "seiscientos",
-            "setecientos",
-            "ochocientos",
-            "novecientos",
-        ]
-
-        if n < 10:
-            return unidades[n]
-        elif n < 100:
-            return (
-                f"{decenas[n//10]} y {unidades[n%10]}"
-                if n % 10 != 0
-                else decenas[n // 10]
-            )
-        elif n < 1000:
-            return (
-                f"{centenas[n//100]} {self.number_to_words(n%100)}"
-                if n % 100 != 0
-                else centenas[n // 100]
-            )
-        elif n < 1000000:
-            miles = n // 1000
-            resto = n % 1000
-            palabra_miles = (
-                "mil" if miles == 1 else f"{self.number_to_words(miles)} mil"
-            )
-            return (
-                f"{palabra_miles} {self.number_to_words(resto)}"
-                if resto != 0
-                else palabra_miles
-            )
-
-        return str(n)
-
-    def update_printer_status(self, detected, name):
-        """Actualiza el estado de la impresora en la UI."""
-        if detected:
-            self.printer_status_label.config(
-                text=f"✓ Impresora: {name}", foreground="#28a745"
-            )
-        else:
-            self.printer_status_label.config(
-                text="⚠ No se detectó impresora", foreground="#dc3545"
-            )
-
-    def search_printers_dialog(self, parent_window):
-        """Abre diálogo de búsqueda de impresoras."""
-        search_win = Toplevel(parent_window)
-        search_win.title("Buscar Impresoras")
-        search_win.geometry("500x400")
-
-        main_frame = ttk.Frame(search_win, padding="20")
-        main_frame.pack(fill="both", expand=True)
-
-        ttk.Label(
-            main_frame, text="Búsqueda de Impresoras", font=("Arial", 14, "bold")
-        ).pack(pady=(0, 20))
-
-        # Lista de impresoras
-        list_frame = ttk.LabelFrame(
-            main_frame, text="Impresoras Detectadas", padding=10
-        )
-        list_frame.pack(fill="both", expand=True, pady=(0, 15))
-
-        printers_list = tk.Listbox(list_frame, height=10, font=("Arial", 10))
-        printers_list.pack(fill="both", expand=True)
-
-        # Buscar impresoras
-        def search_all_printers():
-            printers_list.delete(0, tk.END)
-            printers_list.insert(tk.END, "Buscando impresoras...")
-            search_win.update()
-
-            found_printers = self.get_all_printers()
-            printers_list.delete(0, tk.END)
-
-            if found_printers:
-                for printer in found_printers:
-                    printers_list.insert(tk.END, printer)
-            else:
-                printers_list.insert(tk.END, "No se encontraron impresoras")
-
-        # Botones
-        btn_frame = ttk.Frame(main_frame)
-        btn_frame.pack(fill="x")
-
-        ttk.Button(btn_frame, text="🔍 Buscar Ahora", command=search_all_printers).pack(
-            side="left", padx=5
-        )
-
-        ttk.Button(btn_frame, text="Cerrar", command=search_win.destroy).pack(
-            side="right", padx=5
-        )
-
-        # Ejecutar búsqueda inicial
-        search_all_printers()
-
-    def get_all_printers(self):
-        """Obtiene lista de todas las impresoras disponibles."""
-        printers = []
-
-        try:
-            import platform
-
-            system = platform.system()
-
-            if system == "Windows":
-                try:
-                    import win32print
-
-                    printer_info = win32print.EnumPrinters(
-                        win32print.PRINTER_ENUM_LOCAL
-                        | win32print.PRINTER_ENUM_CONNECTIONS
-                    )
-                    for printer in printer_info:
-                        printers.append(printer[2])
-                except:
-                    pass
-
-            elif system in ["Darwin", "Linux"]:
-                try:
-                    import subprocess
-
-                    result = subprocess.run(
-                        ["lpstat", "-p"], capture_output=True, text=True
-                    )
-                    if result.returncode == 0:
-                        for line in result.stdout.split("\n"):
-                            if line.startswith("printer"):
-                                printer_name = line.split()[1]
-                                printers.append(printer_name)
-                except:
-                    pass
-        except:
-            pass
-
-        return printers if printers else []
-
-    def confirm_sale_and_process(self, window, venta_id, total, pagado, vuelto, fecha):
-        """Confirma y procesa la venta definitivamente, guarda el recibo y ofrece imprimir.."""
-        if not messagebox.askyesno(
-            "Confirmar Venta",
-            "¿Está seguro de confirmar esta venta?\n\nEsta acción no se puede deshacer.",
-        ):
+    def refresh_preview(self):
+        if not self.preview_visible or not self.preview_text or not self.preview_text.winfo_exists():
             return
 
-        try:
-            cart_data = self.pending_sale.get("cart_snapshot", {})
+        snapshot = self.pending_sale or self._build_sale_snapshot(validate_payment=False)
+        if self.preview_mode_var.get() == "letter":
+            content = self.format_receipt_letter(
+                snapshot["venta_id"],
+                snapshot["total"],
+                snapshot["pagado"],
+                snapshot["vuelto"],
+                snapshot["fecha"],
+                snapshot["cart_snapshot"],
+                snapshot.get("cliente_id"),
+                snapshot.get("metodo_pago"),
+            )
+        else:
+            content = self.format_receipt_ticket(
+                snapshot["venta_id"],
+                snapshot["total"],
+                snapshot["pagado"],
+                snapshot["vuelto"],
+                snapshot["fecha"],
+                snapshot["cart_snapshot"],
+                snapshot.get("cliente_id"),
+                snapshot.get("metodo_pago"),
+            )
 
-            # 🔹 Guardar venta en base de datos
-            self.db.execute(
-                "INSERT INTO Ventas (id, fecha, total, monto_pagado, vuelto, usuario_id, id_cliente, tipo_recibo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    venta_id,
-                    fecha,
-                    total,
-                    pagado,
-                    vuelto,
-                    self.app.current_user[0],
-                    self.pending_sale.get("cliente_id"),
-                    "HTML",
+        self.preview_text.config(state="normal")
+        self.preview_text.delete("1.0", tk.END)
+        self.preview_text.insert("1.0", content)
+        self.preview_text.config(state="disabled")
+
+    def finalize_sale(self):
+        self.open_payment_modal()
+
+    def open_payment_modal(self):
+        if not self.cart:
+            messagebox.showwarning("Advertencia", "El carrito esta vacio.")
+            return
+        self.calculate_change()
+        self._open_payment_window()
+
+    def _open_payment_window(self):
+        if self.payment_window and self.payment_window.winfo_exists():
+            self.payment_window.deiconify()
+            self.payment_window.lift()
+            return
+
+        self.payment_window = tk.Toplevel(self)
+        self.payment_window.title("Cobro rapido")
+        self.payment_window.transient(self.winfo_toplevel())
+        self.payment_window.grab_set()
+        self.payment_window.resizable(False, False)
+        center_window(self.payment_window, 560, 420, parent=self.winfo_toplevel())
+        self.payment_window.protocol("WM_DELETE_WINDOW", self._close_payment_window)
+
+        wrapper = ttk.Frame(self.payment_window, padding=12)
+        wrapper.pack(fill="both", expand=True)
+        wrapper.columnconfigure(0, weight=1)
+
+        ttk.Label(wrapper, text="Cobro de venta", style="POSSection.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(wrapper, text=f"Total a cobrar: {self.total_display_var.get()}", style="POSSection.TLabel").grid(row=1, column=0, sticky="w", pady=(2, 8))
+
+        fields = ttk.LabelFrame(wrapper, text="Datos de pago", padding=10)
+        fields.grid(row=2, column=0, sticky="ew")
+        fields.grid_columnconfigure(0, weight=1)
+
+        ttk.Label(fields, text="Metodo de pago:").grid(row=0, column=0, sticky="w")
+        payment_combo = ttk.Combobox(
+            fields,
+            textvariable=self.payment_method_var,
+            state="readonly",
+            values=("EFECTIVO", "TARJETA", "TRANSFERENCIA", "QR", "CREDITO", "NO_DEFINIDO"),
+        )
+        payment_combo.grid(row=1, column=0, sticky="ew", pady=(2, 8))
+        payment_combo.bind("<<ComboboxSelected>>", self.calculate_change)
+        ttk.Label(fields, text="Monto recibido:").grid(row=2, column=0, sticky="w")
+        self.monto_entry = ttk.Entry(fields, textvariable=self.monto_pagado_var)
+        self.monto_entry.grid(row=3, column=0, sticky="ew", pady=(2, 8))
+        self.monto_entry.bind("<KeyRelease>", self.calculate_change)
+
+        ttk.Label(fields, text="Cambio:").grid(row=4, column=0, sticky="w")
+        ttk.Label(
+            fields,
+            textvariable=self.vuelto_display_var,
+            font=("Segoe UI", 16, "bold"),
+            foreground=PALETTE["success"],
+            background=PALETTE["white"],
+        ).grid(row=5, column=0, sticky="w", pady=(2, 0))
+
+        self.payment_modal_status_var.set(self.status_var.get())
+        ttk.Label(wrapper, textvariable=self.payment_modal_status_var, wraplength=510, style="POSMuted.TLabel").grid(row=3, column=0, sticky="ew", pady=(8, 6))
+
+        actions = ttk.Frame(wrapper)
+        actions.grid(row=4, column=0, sticky="e", pady=(8, 0))
+        ttk.Button(actions, text="Cancelar", style="POSDanger.TButton", command=self._close_payment_window).pack(side="right")
+        ttk.Button(actions, text="Continuar", style="POSSuccess.TButton", command=self._continue_from_payment_modal).pack(side="right", padx=(0, 8))
+
+        self.monto_entry.focus_set()
+        self.monto_entry.selection_range(0, tk.END)
+        self.calculate_change()
+
+    def _continue_from_payment_modal(self):
+        invoice = self._calculate_invoice_totals(validate_payment=False)
+        if invoice.total <= 0:
+            self.status_var.set("Agregue productos al carrito.")
+            self.payment_modal_status_var.set(self.status_var.get())
+            return
+        if invoice.validation_errors and (self.payment_method_var.get() or "NO_DEFINIDO").upper() == "EFECTIVO":
+            faltante = invoice.total - self._parse_float(self.monto_pagado_var.get())
+            self.status_var.set(f"Faltan {format_hnl(faltante)} para completar el pago.")
+            self.payment_modal_status_var.set(self.status_var.get())
+            return
+
+        self._close_payment_window()
+        self.open_sale_summary_modal()
+
+    def open_sale_summary_modal(self):
+        if not self.cart:
+            messagebox.showwarning("Advertencia", "El carrito esta vacio.")
+            return
+        invoice = self._calculate_invoice_totals(validate_payment=False)
+        if invoice.validation_errors and (self.payment_method_var.get() or "NO_DEFINIDO").upper() == "EFECTIVO":
+            faltante = invoice.total - self._parse_float(self.monto_pagado_var.get())
+            messagebox.showwarning("Pago incompleto", f"Faltan {format_hnl(faltante)} para completar el pago.")
+            return
+
+        self.pending_sale = self._build_sale_snapshot()
+        self.refresh_preview()
+
+        self._close_summary_window()
+        self.summary_window = tk.Toplevel(self)
+        self.summary_window.title("Resumen de venta")
+        self.summary_window.transient(self.winfo_toplevel())
+        self.summary_window.grab_set()
+        self.summary_window.resizable(True, True)
+        center_window(self.summary_window, 920, 620, parent=self.winfo_toplevel())
+        self.summary_window.protocol("WM_DELETE_WINDOW", self._close_summary_window)
+
+        container = ttk.Frame(self.summary_window, padding=12)
+        container.pack(fill="both", expand=True)
+        container.columnconfigure(0, weight=1)
+        container.rowconfigure(1, weight=1)
+
+        header = ttk.Frame(container)
+        header.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        header.columnconfigure(0, weight=1)
+        ttk.Label(header, text="Resumen de venta (previo a confirmar)", style="POSSection.TLabel").grid(
+            row=0,
+            column=0,
+            sticky="w",
+        )
+        ttk.Label(
+            header,
+            text=(
+                f"Cliente: {self.client_var.get()} | Modo: {self.sale_mode_var.get()} | "
+                f"Metodo: {self.payment_method_var.get()}"
+            ),
+            style="POSMuted.TLabel",
+        ).grid(row=1, column=0, sticky="w", pady=(2, 0))
+
+        body = ttk.Frame(container)
+        body.grid(row=1, column=0, sticky="nsew")
+        body.columnconfigure(0, weight=1)
+        body.rowconfigure(0, weight=1)
+
+        columns = ("producto", "cantidad", "precio", "desc", "subtotal")
+        summary_tree = ttk.Treeview(body, columns=columns, show="headings", height=14)
+        summary_tree.heading("producto", text="Producto")
+        summary_tree.heading("cantidad", text="Cantidad")
+        summary_tree.heading("precio", text="Precio unitario")
+        summary_tree.heading("desc", text="Descuento")
+        summary_tree.heading("subtotal", text="Subtotal")
+        summary_tree.column("producto", width=320, anchor="w")
+        summary_tree.column("cantidad", width=110, anchor="center")
+        summary_tree.column("precio", width=160, anchor="e")
+        summary_tree.column("desc", width=120, anchor="center")
+        summary_tree.column("subtotal", width=170, anchor="e")
+
+        y_scroll = ttk.Scrollbar(body, orient="vertical", command=summary_tree.yview)
+        x_scroll = ttk.Scrollbar(body, orient="horizontal", command=summary_tree.xview)
+        summary_tree.configure(yscrollcommand=y_scroll.set, xscrollcommand=x_scroll.set)
+        summary_tree.grid(row=0, column=0, sticky="nsew")
+        y_scroll.grid(row=0, column=1, sticky="ns")
+        x_scroll.grid(row=1, column=0, sticky="ew")
+
+        sale = self.pending_sale
+        cart_data = sale["cart_snapshot"]
+        for item in cart_data.values():
+            qty = int(item["cantidad"])
+            price = float(item["precio_unitario"])
+            pct = float(item.get("descuento_porcentaje", 0))
+            subtotal = (price * qty) * (1 - pct)
+            summary_tree.insert(
+                "",
+                "end",
+                values=(
+                    item["nombre"],
+                    qty,
+                    format_hnl(price),
+                    f"{int(round(pct * 100))}%",
+                    format_hnl(subtotal),
                 ),
             )
 
-            # 🔹 Guardar detalle y actualizar stock
-            for prod_id, data in cart_data.items():
-                cant = data["cantidad"]
-                precio = data["precio_unitario"]
-                desc_pct = data["descuento_porcentaje"]
-                desc_monto = (precio * cant) * desc_pct
-                subtotal = (precio * cant) - desc_monto
+        footer = ttk.Frame(container)
+        footer.grid(row=2, column=0, sticky="ew", pady=(8, 0))
+        footer.columnconfigure(0, weight=1)
 
-                self.db.execute(
-                    "INSERT INTO DetalleVenta (venta_id, producto_id, nombre_producto, cantidad, precio_unitario, descuento, subtotal) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        venta_id,
-                        prod_id,
-                        data["nombre"],
-                        cant,
-                        precio,
-                        desc_monto,
-                        subtotal,
-                    ),
-                )
+        ttk.Label(
+            footer,
+            text=(
+                f"Total: {format_hnl(sale['total'])}  |  "
+                f"Recibido: {format_hnl(sale['pagado'])}  |  "
+                f"Cambio: {format_hnl(sale['vuelto'])}"
+            ),
+            style="POSSection.TLabel",
+        ).grid(row=0, column=0, sticky="w")
 
-                self.db.execute(
-                    "UPDATE Productos SET stock = stock - ? WHERE id = ?",
-                    (cant, prod_id),
-                )
+        validation_label = ttk.Label(footer, style="POSMuted.TLabel")
+        validation_label.grid(row=1, column=0, sticky="w", pady=(4, 0))
 
-            # 🔹 Limpiar carrito y actualizar interfaz
-            self.cart = {}
-            self.update_cart_display()
-            self.monto_pagado_var.set(0.0)
-            self.discount_combo.set("Sin descuento")
+        actions = ttk.Frame(footer)
+        actions.grid(row=2, column=0, sticky="e", pady=(10, 0))
 
-            # Cerrar ventana de vista previa
-            window.destroy()
+        ttk.Button(actions, text="Cancelar", style="POSDanger.TButton", command=self._close_summary_window).pack(
+            side="right"
+        )
+        confirm_btn = ttk.Button(
+            actions,
+            text="Confirmar venta",
+            style="POSSuccess.TButton",
+            command=lambda: self.confirm_sale_and_process(parent_modal=self.summary_window),
+        )
+        confirm_btn.pack(side="right", padx=(0, 8))
 
-            messagebox.showinfo(
-                "Éxito", f"Venta {venta_id} confirmada y procesada correctamente."
+        if sale["pagado"] < sale["total"]:
+            faltante = sale["total"] - sale["pagado"]
+            validation_label.configure(text=f"Monto insuficiente. Faltan {format_hnl(faltante)}.")
+            confirm_btn.state(["disabled"])
+        else:
+            validation_label.configure(text="Revise la venta y confirme para procesar inventario y recibo.")
+            confirm_btn.state(["!disabled"])
+
+    def confirm_sale_and_process(self, parent_modal=None):
+        if not self.pending_sale:
+            self.pending_sale = self._build_sale_snapshot()
+
+        if parent_modal is None and not messagebox.askyesno(
+            "Confirmar venta",
+            "Desea confirmar esta venta y actualizar inventario?",
+        ):
+            return
+
+        sale = self.pending_sale
+        cart_data = sale["cart_snapshot"]
+        try:
+            self.db.execute(
+                """
+                INSERT INTO Ventas (
+                    id, fecha, total, monto_pagado, vuelto, metodo_pago, usuario_id, id_cliente, tipo_recibo
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    sale["venta_id"],
+                    sale["fecha"],
+                    sale["total"],
+                    sale["pagado"],
+                    sale["vuelto"],
+                    sale.get("metodo_pago", "NO_DEFINIDO"),
+                    self.app.current_user[0],
+                    sale["cliente_id"],
+                    f"POS-{sale['modo']}",
+                ),
             )
 
-            # 🔹 Generar contenido HTML del recibo
+            for prod_id, item in cart_data.items():
+                qty = int(item["cantidad"])
+                price = float(item["precio_unitario"])
+                pct = float(item.get("descuento_porcentaje", 0))
+                discount_amount = (price * qty) * pct
+                subtotal = (price * qty) - discount_amount
+
+                self.db.execute(
+                    """
+                    INSERT INTO DetalleVenta (
+                        venta_id, producto_id, nombre_producto, cantidad, precio_unitario, descuento, subtotal
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (sale["venta_id"], prod_id, item["nombre"], qty, price, discount_amount, subtotal),
+                )
+                self.db.execute("UPDATE Productos SET stock = stock - ? WHERE id = ?", (qty, prod_id))
+
             html_content = self.generate_receipt_html(
-                venta_id, total, pagado, vuelto, fecha, cart_data
+                sale["venta_id"],
+                sale["total"],
+                sale["pagado"],
+                sale["vuelto"],
+                sale["fecha"],
+                cart_data,
+                sale["cliente_id"],
+                sale.get("metodo_pago"),
             )
+            self.save_receipt(html_content, sale["venta_id"])
 
-            # 🧩 GUARDAR SIEMPRE EL RECIBO ANTES DE TODO
-            self.save_receipt(html_content, venta_id, window)
+            self.clear_cart(silent=True)
+            self.pending_sale = sale
+            self.update_cart_display()
+            self.refresh_preview()
+            self.status_var.set("Venta procesada correctamente.")
+            self._close_summary_window()
 
-            # 🔹 Luego preguntar si desea imprimirlo
-            action = messagebox.askquestion(
-                "Venta Confirmada",
-                "Venta procesada exitosamente.\n\n¿Desea imprimir el recibo?",
-                icon="info",
-            )
-
-            if action == "yes":
-                self.print_receipt(html_content, window)
+            if messagebox.askyesno("Recibo", "Venta procesada. Desea abrir el recibo?"):
+                self.print_receipt(html_content)
+            else:
+                messagebox.showinfo("Exito", "Venta confirmada y guardada en SQLite.")
 
         except Exception as e:
-            messagebox.showerror("Error", f"Error al procesar venta: {e}")
+            messagebox.showerror("Error", f"No se pudo procesar la venta: {e}")
 
-    def format_receipt_for_preview(self, venta_id, total, pagado, vuelto, fecha):
-        """Formatea el recibo en texto plano para vista previa."""
-        lines = []
-        lines.append("=" * 40)
-        lines.append("MI NEGOCIO ERP".center(40))
-        lines.append("=" * 40)
-        lines.append("")
-        lines.append(f"Venta ID: {venta_id}")
-        lines.append(f"Fecha: {fecha}")
-        lines.append("")
-        lines.append("-" * 40)
-        lines.append(f"{'PRODUCTO':<20} {'CANT':<5} {'SUBTOTAL':>10}")
-        lines.append("-" * 40)
+    def _receipt_items(self, cart_data):
+        items = []
+        for prod_id, item in cart_data.items():
+            pct = float(item.get("descuento_porcentaje", 0))
+            subtotal = (float(item["precio_unitario"]) * int(item["cantidad"])) * (1 - pct)
+            items.append(
+                {
+                    "producto_id": prod_id,
+                    "nombre": item["nombre"],
+                    "cantidad": item["cantidad"],
+                    "precio_unitario": item["precio_unitario"],
+                    "descuento_porcentaje": pct,
+                    "descuento_monto": (float(item["precio_unitario"]) * int(item["cantidad"])) * pct,
+                    "subtotal": subtotal,
+                    "tax_rate": float(item.get("tax_rate", 0.15)),
+                    "tax_exempt": bool(item.get("tax_exempt", False)),
+                }
+            )
+        return items
 
-        for data in self.cart.values():
-            cant = data["cantidad"]
-            precio = data["precio_unitario"]
-            desc_pct = data["descuento_porcentaje"]
-            desc_monto = (precio * cant) * desc_pct
-            subtotal = (precio * cant) - desc_monto
+    def generate_receipt_html(self, venta_id, total, pagado, vuelto, fecha, cart_data=None, cliente_id=None, metodo_pago=None):
+        cart_data = cart_data or (self.pending_sale or {}).get("cart_snapshot", self.cart)
+        cliente = None
+        if cliente_id:
+            rows = self.db.fetch("SELECT nombre, apellido, dni, telefono, direccion FROM Clientes WHERE id = ?", (cliente_id,))
+            if rows:
+                cliente = {"nombre": rows[0][0], "apellido": rows[0][1], "dni": rows[0][2], "telefono": rows[0][3], "direccion": rows[0][4]}
 
-            nombre = data["nombre"][:18]
-            desc_text = f" (-{int(desc_pct*100)}%)" if desc_pct > 0 else ""
+        return build_receipt_html(
+            venta_id=venta_id,
+            fecha=fecha,
+            total=total,
+            monto_pagado=pagado,
+            vuelto=vuelto,
+            items=self._receipt_items(cart_data),
+            cliente=cliente,
+            metodo_pago=metodo_pago or self.payment_method_var.get() or "NO_DEFINIDO",
+            mode=self.preview_mode_var.get(),
+            number_to_words=self.number_to_words,
+            tax_included=(self.pending_sale or {}).get("tax_included", self._invoice_prices_include_tax()),
+        )
 
-            lines.append(f"{nombre+desc_text:<20} {cant:<5} ${subtotal:>9.2f}")
+    def format_receipt_ticket(self, venta_id, total, pagado, vuelto, fecha, cart_data=None, cliente_id=None, metodo_pago=None):
+        return "\n".join(
+            self._build_text_receipt(
+                venta_id,
+                total,
+                pagado,
+                vuelto,
+                fecha,
+                cart_data,
+                cliente_id,
+                metodo_pago=metodo_pago,
+                width=42,
+            )
+        )
 
-        lines.append("-" * 40)
-        lines.append("")
-        lines.append(f"{'TOTAL A PAGAR:':<25} ${total:>10.2f}")
-        lines.append(f"{'MONTO RECIBIDO:':<25} ${pagado:>10.2f}")
-        lines.append(f"{'VUELTO:':<25} ${vuelto:>10.2f}")
-        lines.append("")
-        lines.append("=" * 40)
-        lines.append("Gracias por su compra".center(40))
-        lines.append("Vuelva pronto".center(40))
-        lines.append("=" * 40)
+    def format_receipt_letter(self, venta_id, total, pagado, vuelto, fecha, cart_data=None, cliente_id=None, metodo_pago=None):
+        return "\n".join(
+            self._build_text_receipt(
+                venta_id,
+                total,
+                pagado,
+                vuelto,
+                fecha,
+                cart_data,
+                cliente_id,
+                metodo_pago=metodo_pago,
+                width=80,
+            )
+        )
 
-        return "\n".join(lines)
+    def _build_text_receipt(self, venta_id, total, pagado, vuelto, fecha, cart_data, cliente_id, metodo_pago, width):
+        cliente = None
+        if cliente_id:
+            rows = self.db.fetch("SELECT nombre, apellido, dni, telefono, direccion FROM Clientes WHERE id = ?", (cliente_id,))
+            if rows:
+                cliente = rows[0]
 
-    def detect_printer(self):
-        """Detecta si hay una impresora disponible."""
-        try:
-            import platform
-
-            system = platform.system()
-
-            if system == "Windows":
-                try:
-                    import win32print
-
-                    default_printer = win32print.GetDefaultPrinter()
-                    if default_printer:
-                        return True, default_printer
-                except:
-                    pass
-
-            elif system == "Darwin":
-                try:
-                    import subprocess
-
-                    result = subprocess.run(
-                        ["lpstat", "-d"], capture_output=True, text=True
-                    )
-                    if result.returncode == 0 and result.stdout:
-                        printer = result.stdout.split(":")[-1].strip()
-                        return True, printer
-                except:
-                    pass
-
-            elif system == "Linux":
-                try:
-                    import subprocess
-
-                    result = subprocess.run(
-                        ["lpstat", "-d"], capture_output=True, text=True
-                    )
-                    if result.returncode == 0 and result.stdout:
-                        printer = result.stdout.split(":")[-1].strip()
-                        return True, printer
-                except:
-                    pass
-
-            return False, "No detectada"
-        except:
-            return False, "No detectada"
-
-    def open_printer_settings(self):
-        """Abre ventana de configuración de impresora."""
-        settings_win = Toplevel(self.app)
-        settings_win.title("Configuración de Impresora")
-        settings_win.geometry("500x400")
-
-        main_frame = ttk.Frame(settings_win, padding="20")
-        main_frame.pack(fill="both", expand=True)
-
-        ttk.Label(
-            main_frame, text="Configuración de Impresora", font=("Arial", 14, "bold")
-        ).pack(pady=(0, 20))
-
-        ttk.Label(
-            main_frame,
-            text="No se detectó ninguna impresora conectada",
-            font=("Arial", 11),
-            foreground="#dc3545",
-        ).pack(pady=10)
-
-        ttk.Separator(main_frame, orient="horizontal").pack(fill="x", pady=15)
-
-        ttk.Label(
-            main_frame,
-            text="Pasos para configurar su impresora:",
-            font=("Arial", 10, "bold"),
-        ).pack(anchor="w", pady=(0, 10))
-
-        steps = [
-            "1. Conecte físicamente la impresora a su computadora",
-            "2. Encienda la impresora",
-            "3. Instale los drivers desde el sitio web del fabricante",
-            "4. Configure la impresora en su sistema operativo:",
-            "   - Windows: Panel de Control > Dispositivos e impresoras",
-            "   - macOS: Preferencias del Sistema > Impresoras",
-            "   - Linux: Configuración > Impresoras",
-            "5. Reinicie esta aplicación para detectar la impresora",
+        cart_data = cart_data or self.cart
+        lines = [
+            "=" * width,
+            "PODEGA Y COMERCIAL RIVERA".center(width),
+            f"Venta: {venta_id}".center(width),
+            f"Fecha: {fecha}".center(width),
+            f"Metodo: {metodo_pago or 'NO_DEFINIDO'}".center(width),
+            "=" * width,
         ]
 
-        for step in steps:
-            ttk.Label(main_frame, text=step, font=("Arial", 9), foreground="#333").pack(
-                anchor="w", pady=2, padx=20
-            )
+        if cliente:
+            nombre, apellido, dni, telefono, direccion = cliente
+            lines.extend([
+                "Cliente:".center(width),
+                f"{nombre} {apellido}".center(width),
+                f"DNI: {dni or 'N/A'}".center(width),
+                f"Tel: {telefono or 'N/A'}".center(width),
+                f"Dir: {direccion or 'N/A'}".center(width),
+                "-" * width,
+            ])
 
-        ttk.Separator(main_frame, orient="horizontal").pack(fill="x", pady=15)
+        lines.append(f"{'Cant.':<6}{'Producto':<{width - 22}}{'Total':>16}")
+        lines.append("-" * width)
+        for item in cart_data.values():
+            qty = int(item["cantidad"])
+            price = float(item["precio_unitario"])
+            pct = float(item.get("descuento_porcentaje", 0))
+            line_total = (price * qty) * (1 - pct)
+            label = item["nombre"]
+            if item.get("manual"):
+                label += f" (M {int(round(pct * 100))}%)"
+            elif pct > 0 and item.get("auto_label"):
+                label += f" ({item['auto_label']} {int(round(pct * 100))}%)"
+            lines.append(f"{qty:<6}{label[:width - 22]:<{width - 22}}L {line_total:>12.2f}")
 
-        btn_frame = ttk.Frame(main_frame)
-        btn_frame.pack(fill="x", pady=10)
+        lines.extend(["-" * width, f"{'TOTAL':<{width - 15}}L {total:>10.2f}", f"{'RECIBIDO':<{width - 15}}L {pagado:>10.2f}", f"{'VUELTO':<{width - 15}}L {vuelto:>10.2f}", "=" * width])
+        return lines
 
-        ttk.Button(
-            btn_frame,
-            text="Reintentar Detección",
-            command=lambda: self.retry_printer_detection(settings_win),
-        ).pack(side="left", padx=5)
+    def number_to_words(self, n):
+        if n == 0:
+            return "cero"
+        unidades = ["", "un", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho", "nueve"]
+        decenas = ["", "diez", "veinte", "treinta", "cuarenta", "cincuenta", "sesenta", "setenta", "ochenta", "noventa"]
+        centenas = ["", "ciento", "doscientos", "trescientos", "cuatrocientos", "quinientos", "seiscientos", "setecientos", "ochocientos", "novecientos"]
+        if n < 10:
+            return unidades[n]
+        if n < 100:
+            return f"{decenas[n // 10]} y {unidades[n % 10]}".strip() if n % 10 else decenas[n // 10]
+        if n < 1000:
+            return f"{centenas[n // 100]} {self.number_to_words(n % 100)}".strip() if n % 100 else centenas[n // 100]
+        if n < 1000000:
+            miles = n // 1000
+            resto = n % 1000
+            prefix = "mil" if miles == 1 else f"{self.number_to_words(miles)} mil"
+            return f"{prefix} {self.number_to_words(resto)}".strip() if resto else prefix
+        return str(n)
 
-        ttk.Button(btn_frame, text="Cerrar", command=settings_win.destroy).pack(
-            side="right", padx=5
-        )
+    def _default_receipt_dir(self):
+        local_appdata = os.getenv("LOCALAPPDATA") or str(Path.home())
+        return Path(local_appdata) / "ERP-Facturacion" / "Recibos"
 
-    def retry_printer_detection(self, window):
-        """Reintenta detectar la impresora."""
-        detected, name = self.detect_printer()
-        if detected:
-            messagebox.showinfo(
-                "Impresora Detectada",
-                f"Impresora encontrada:\n{name}\n\nYa puede imprimir sus recibos.",
-            )
-            window.destroy()
-        else:
-            messagebox.showwarning(
-                "No Detectada",
-                "No se detectó ninguna impresora.\nVerifique la conexión e instalación de drivers.",
-            )
+    def _candidate_receipt_dirs(self):
+        configured_path = (self.db.get_config("recibo_save_path", "") or "").strip()
+        candidates = []
 
-    def change_save_folder(self, parent_window):
-        """Permite cambiar la carpeta donde se guardan los recibos."""
-        folder = filedialog.askdirectory(
-            title="Seleccionar carpeta para guardar recibos", parent=parent_window
-        )
+        if configured_path:
+            candidates.append(Path(configured_path).expanduser())
 
-        if folder:
-            self.db.set_config("recibo_save_path", folder)
-            self.path_label.config(text=folder)
-            messagebox.showinfo(
-                "Carpeta Configurada", f"Los recibos se guardarán en:\n{folder}"
-            )
+        default_dir = self._default_receipt_dir()
+        if default_dir not in candidates:
+            candidates.append(default_dir)
 
-    def print_receipt(self, html_content, window):
-        """Imprime el recibo."""
-        try:
-            import tempfile
-            import webbrowser
+        return candidates
 
-            paper_size = getattr(self, "paper_size_var", None)
-            size_text = paper_size.get() if paper_size else "ticket"
+    def _write_receipt_file(self, output_dir, venta_id, html_content):
+        output_dir.mkdir(parents=True, exist_ok=True)
+        file_path = output_dir / f"Recibo_{venta_id}.html"
+        with file_path.open("w", encoding="utf-8") as handle:
+            handle.write(html_content)
+        return file_path
 
-            with tempfile.NamedTemporaryFile(
-                mode="w", suffix=".html", delete=False, encoding="utf-8"
-            ) as f:
-                f.write(html_content)
-                temp_path = f.name
+    def save_receipt(self, html_content, venta_id):
+        configured_path = (self.db.get_config("recibo_save_path", "") or "").strip()
+        last_error = None
 
-            webbrowser.open(f"file://{temp_path}")
-
-            messagebox.showinfo(
-                "Impresión Iniciada",
-                f"Se abrió el recibo en su navegador.\n"
-                f"Tamaño: {size_text}\n\n"
-                f"Use Ctrl+P o Cmd+P para imprimir.",
-            )
-
-            window.destroy()
-
-        except Exception as e:
-            messagebox.showerror("Error de Impresión", f"No se pudo imprimir: {e}")
-
-    def save_receipt(self, html_content, venta_id, window):
-        """Guarda el recibo en la carpeta configurada."""
-        saved_path = self.db.get_config("recibo_save_path", "")
-        # ✅ Verificación y creación automática de carpeta
-
-        if saved_path and not os.path.isdir(saved_path):
-            messagebox.showwarning(
-                "Carpeta no encontrada",
-                f"La carpeta configurada no existe:\n{saved_path}\n\nSe creará una nueva automáticamente.",
-            )
-
-        if not saved_path or not os.path.isdir(saved_path):
-            # Carpeta por defecto si no está configurada
-            saved_path = os.path.join(os.path.expanduser("~"), "Recibos")
-            os.makedirs(saved_path, exist_ok=True)
-            # Actualiza la config en la base de datos
+        for output_dir in self._candidate_receipt_dirs():
             try:
-                self.db.set_config("recibo_save_path", saved_path)
-            except:
-                pass
+                file_path = self._write_receipt_file(output_dir, venta_id, html_content)
+            except OSError as exc:
+                last_error = exc
+                continue
 
-        file_path = ""
-        if saved_path and os.path.isdir(saved_path):
-            # Asegura que la carpeta existe y es válida
-            filename = f"Recibo_{venta_id}.html"
-            file_path = os.path.join(saved_path, filename)
-        else:
-            # Si no hay carpeta válida, pide al usuario seleccionar dónde guardar
-            file_path = filedialog.asksaveasfilename(
-                defaultextension=".html",
-                filetypes=[("HTML", "*.html"), ("Todos los archivos", "*.*")],
-                initialfile=f"Recibo_{venta_id}.html",
-                title="Guardar Recibo",
-            )
+            if str(output_dir) != configured_path:
+                self.db.set_config("recibo_save_path", str(output_dir))
 
-        if file_path:
-            try:
-                # Crea la carpeta si no existe
-                folder = os.path.dirname(file_path)
-                if not os.path.exists(folder):
-                    os.makedirs(folder, exist_ok=True)
+            self.last_receipt_path = str(file_path)
+            return str(file_path)
 
-                with open(file_path, "w", encoding="utf-8") as f:
-                    f.write(html_content)
+        raise PermissionError(
+            "No se pudo guardar el recibo en la ruta configurada ni en la ruta local predeterminada."
+        ) from last_error
 
-                messagebox.showinfo(
-                    "Recibo Guardado", f"Recibo guardado exitosamente en:\n{file_path}"
-                )
-
-                if messagebox.askyesno(
-                    "Abrir Recibo", "¿Desea abrir el recibo guardado?"
-                ):
-                    import webbrowser
-
-                    webbrowser.open(f"file://{file_path}")
-
-                window.destroy()
-
-            except Exception as e:
-                messagebox.showerror(
-                    "Error al Guardar", f"No se pudo guardar el recibo: {e}"
-                )
-        else:
-            # Si el usuario cancela el diálogo de guardado, no hace nada
-            pass
-
-    def generate_receipt_html(
-        self, venta_id, total, pagado, vuelto, fecha, cart_data=None
-    ):
-        """Genera el contenido HTML del recibo con diseño similar a ticket y carta."""
-        if cart_data is None:
-            cart_data = self.pending_sale.get("cart_snapshot", self.cart)
-
-        # Obtener información del cliente
-        cliente_info = None
-        cliente_id = (
-            self.pending_sale.get("cliente_id")
-            if hasattr(self, "pending_sale") and self.pending_sale
-            else None
-        )
-
-        # Si no hay cliente_id en pending_sale, intentar obtenerlo de la venta en la BD
-        if not cliente_id and venta_id:
-            venta_data = self.db.fetch(
-                "SELECT id_cliente FROM Ventas WHERE id = ?", (venta_id,)
-            )
-            if venta_data and venta_data[0][0]:
-                cliente_id = venta_data[0][0]
-
-        if cliente_id:
-            cliente_data = self.db.fetch(
-                "SELECT nombre, apellido, dni, telefono, direccion FROM Clientes WHERE id = ?",
-                (cliente_id,),
-            )
-            if cliente_data:
-                cliente_info = {
-                    "nombre": cliente_data[0][0],
-                    "apellido": cliente_data[0][1],
-                    "dni": cliente_data[0][2],
-                    "telefono": cliente_data[0][3],
-                    "direccion": cliente_data[0][4],
-                }
-
-        # Determinar formato (ticket/carta) según configuración o variable
-        paper_size = getattr(self, "paper_size_var", None)
-        mode = paper_size.get() if paper_size else "ticket"
-
-        # Encabezado de empresa
-        empresa = {
-            "rtn": "12011972000081",
-            "nombre": "PODEGA Y COMERCIAL RIVERA",
-            "tel": "2774-1192 / 9967-7300",
-            "direccion": "Bo. La Mercedes, Colonia la Ermita, 1ra Calle, 14-62, frente a Farmacia Santa, La Paz, Honduras",
-            "email": "freddyrivera2015@gmail.com",
-        }
-
-        # Estilos básicos
-        if mode == "ticket":
-            width = "350px"
-            font_size = "12px"
-            table_width = "100%"
-        else:
-            width = "700px"
-            font_size = "15px"
-            table_width = "100%"
-
-        # Calcular totales e impuestos
-        subtotal_gravado = 0.0
-        items_html = ""
-        for prod_id, data in cart_data.items():
-            cant = data["cantidad"]
-            precio = data["precio_unitario"]
-            desc_pct = data["descuento_porcentaje"]
-            desc_monto = (precio * cant) * desc_pct
-            subtotal = (precio * cant) - desc_monto
-            subtotal_gravado += subtotal
-
-            codigo = str(prod_id).zfill(8 if mode == "ticket" else 13)
-            nombre = data["nombre"][:10] if mode == "ticket" else data["nombre"][:28]
-            desc_text = f" (-{int(desc_pct*100)}%)" if desc_pct > 0 else ""
-
-            items_html += f"""
-            <tr>
-                <td>{cant}</td>
-                <td>{codigo}</td>
-                <td>{nombre}{desc_text}</td>
-                <td>L {precio:.2f}</td>
-                <td>L {subtotal:.2f}</td>
-            </tr>
-            """
-
-        impuesto_15 = subtotal_gravado * 0.15
-        total_con_impuesto = subtotal_gravado + impuesto_15
-        total_entero = int(total)
-        total_centavos = int(round((total - total_entero) * 100))
-        monto_letras = f"{self.number_to_words(total_entero).upper()} LEMPIRAS CON {total_centavos:02d}/100"
-
-        # HTML completo
-        html_content = f"""
-        <html>
-        <head>
-            <meta charset="utf-8">
-            <title>Recibo de Venta {venta_id}</title>
-            <style>
-                body {{
-                    width: {width};
-                    font-family: 'Courier New', Courier, monospace;
-                    font-size: {font_size};
-                    margin: 0 auto;
-                    background: #fff;
-                    color: #222;
-                }}
-                .header, .footer {{
-                    text-align: center;
-                    margin-bottom: 10px;
-                }}
-                .title {{
-                    font-size: 1.2em;
-                    font-weight: bold;
-                    color: #dc3545;
-                }}
-                table {{
-                    width: {table_width};
-                    border-collapse: collapse;
-                    margin-bottom: 10px;
-                }}
-                th, td {{
-                    border-bottom: 1px solid #ddd;
-                    padding: 4px 6px;
-                    text-align: left;
-                }}
-                th {{
-                    background: #f8f8f8;
-                }}
-                .totals td {{
-                    font-weight: bold;
-                }}
-                .observaciones {{
-                    margin-top: 10px;
-                    font-size: 0.95em;
-                    color: #555;
-                }}
-            </style>
-        </head>
-        <body>
-            <div class="header">
-                <div>{empresa["nombre"]}</div>
-                <div>R.T.N.: {empresa["rtn"]}</div>
-                <div>Tel: {empresa["tel"]}</div>
-                <div>{empresa["direccion"]}</div>
-                <div>Email: {empresa["email"]}</div>
-                <hr>
-                <div class="title">FACTURA</div>
-                <div>No. 0000-0001-{venta_id.split('-')[-1]}</div>
-                <div>Fecha: {fecha}</div>
-            </div>"""
-
-        # Agregar información del cliente si existe
-        if cliente_info:
-            cliente_section = f"""
-            <div style="margin: 15px 0; padding: 8px; border: 1px solid #ddd; background: #f9f9f9;">
-                <div style="font-weight: bold; margin-bottom: 5px;">DATOS DEL CLIENTE:</div>
-                <div><strong>Nombre:</strong> {cliente_info['nombre']} {cliente_info['apellido']}</div>"""
-
-            if cliente_info["dni"]:
-                cliente_section += (
-                    f"""<div><strong>DNI:</strong> {cliente_info['dni']}</div>"""
-                )
-
-            if cliente_info["telefono"]:
-                cliente_section += f"""<div><strong>Teléfono:</strong> {cliente_info['telefono']}</div>"""
-
-            if cliente_info["direccion"]:
-                cliente_section += f"""<div><strong>Dirección:</strong> {cliente_info['direccion']}</div>"""
-
-            cliente_section += """
-            </div>"""
-
-            html_content += cliente_section
-
-        html_content += f"""
-            <table>
-                <tr>
-                    <th>Cant.</th>
-                    <th>Código</th>
-                    <th>Producto</th>
-                    <th>P.Unit</th>
-                    <th>Subtotal</th>
-                </tr>
-                {items_html}
-            </table>
-            <table>
-                <tr class="totals"><td colspan="4" style="text-align:right;">TOTAL:</td><td>L {total:.2f}</td></tr>
-                <tr><td colspan="5">{monto_letras}</td></tr>
-            </table>
-            <table>
-                <tr><td>Orden de Compra Exenta:</td></tr>
-                <tr><td>Constancia Registro Exento:</td></tr>
-                <tr><td>Desc. y Rebajas Otorgados:</td></tr>
-            </table>
-            <table>
-                <tr><th>Concepto</th><th>Total</th></tr>
-                <tr><td>Sub Total</td><td>L {subtotal_gravado:.2f}</td></tr>
-                <tr><td>Exento</td><td>L 0.00</td></tr>
-                <tr><td>Gravado 15%</td><td>L {subtotal_gravado:.2f}</td></tr>
-                <tr><td>Gravado 18%</td><td>L 0.00</td></tr>
-                <tr><td>Impuesto 15%</td><td>L {impuesto_15:.2f}</td></tr>
-                <tr><td>Impuesto 18%</td><td>L 0.00</td></tr>
-                <tr class="totals"><td>TOTAL:</td><td>L {total_con_impuesto:.2f}</td></tr>
-            </table>
-            <table>
-                <tr><td>Monto Recibido:</td><td>L {pagado:.2f}</td></tr>
-                <tr><td>Vuelto:</td><td>L {vuelto:.2f}</td></tr>
-            </table>
-            <div class="observaciones">
-                Observaciones:<br>
-                <br>
-            </div>
-            <div class="footer">
-                <hr>
-                Original - Cliente
-                <br>
-                Gracias por su compra
-            </div>
-        </body>
-        </html>
-        """
-        return html_content
+    def print_receipt(self, html_content):
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False, encoding="utf-8") as handle:
+            handle.write(html_content)
+            temp_path = handle.name
+        webbrowser.open(f"file://{temp_path}")
+        messagebox.showinfo("Impresion", "Se abrio el recibo en el navegador. Use Ctrl+P para imprimir.", parent=self)
 
     def format_receipt_for_preview(self, venta_id, total, pagado, vuelto, fecha):
-        """Método legacy para compatibilidad,,."""
-        return self.format_receipt_ticket(venta_id, total, pagado, vuelto, fecha)
+        return self.format_receipt_ticket(venta_id, total, pagado, vuelto, fecha, metodo_pago=self.payment_method_var.get())
+
+    def _parse_float(self, value):
+        try:
+            return normalize_hnl_amount(parse_hnl(value, default=0.0))
+        except (TypeError, ValueError, tk.TclError):
+            return 0.0
+
+    def _widget_exists(self, widget):
+        return bool(widget) and bool(widget.winfo_exists())
+
+    def _invoice_prices_include_tax(self):
+        raw_value = str(self.db.get_config("factura_tax_included", "1") or "1").strip().lower()
+        return raw_value not in {"0", "false", "no", "off"}
+
+    def _calculate_invoice_totals(self, cart_data=None, amount_received=None, payment_method=None, validate_payment=False):
+        cart_data = cart_data or self.cart
+        invoice = calculate_invoice_totals(
+            self._receipt_items(cart_data),
+            tax_included=self._invoice_prices_include_tax(),
+            payment_method=payment_method or self.payment_method_var.get() or "NO_DEFINIDO",
+            amount_received=self.monto_pagado_var.get() if amount_received is None else amount_received,
+        )
+        if validate_payment and invoice.validation_errors:
+            raise ValueError(" ".join(invoice.validation_errors))
+        return invoice
+
+    def _set_cart_editor_state(self, prod_id):
+        item = self.cart.get(prod_id) if prod_id is not None else None
+        if not item:
+            self.selected_cart_name_var.set("Seleccione un producto del carrito.")
+            self.selected_cart_discount_var.set("Descuento: 0%")
+            self.selected_cart_subtotal_var.set("Subtotal: L 0.00")
+            self.cart_hint_var.set("Seleccione un producto para editar la cantidad.")
+            self.cart_editor_var.set("1")
+            self.edit_qty_spin.state(["disabled"])
+            return
+
+        pct = float(item.get("descuento_porcentaje", 0))
+        subtotal = float(item["precio_unitario"]) * int(item["cantidad"]) * (1 - pct)
+        self.selected_cart_name_var.set(item["nombre"])
+        self.selected_cart_discount_var.set(f"Descuento: {int(round(pct * 100))}%")
+        self.selected_cart_subtotal_var.set(f"Subtotal: {format_hnl(subtotal)}")
+        self.cart_hint_var.set("Cambie la cantidad y el total se recalculara de inmediato.")
+        self.cart_editor_var.set(str(int(item["cantidad"])))
+        self.edit_qty_spin.state(["!disabled"])
+
+    def _refresh_cart_editor(self):
+        selected = self.cart_tree.selection()
+        if not selected:
+            self._set_cart_editor_state(None)
+            return
+        prod_id = int(selected[0])
+        if prod_id not in self.cart:
+            self._set_cart_editor_state(None)
+            return
+        self._set_cart_editor_state(prod_id)
+
+    def _open_preview_window(self):
+        if self.preview_window and self.preview_window.winfo_exists():
+            self.preview_window.deiconify()
+            self.preview_window.lift()
+            self.preview_visible = True
+            self.preview_button.config(text="Cerrar vista previa")
+            self.preview_label_var.set("Vista previa abierta")
+            self.refresh_preview()
+            return
+
+        self.preview_window = tk.Toplevel(self)
+        self.preview_window.title("Vista previa del recibo")
+        self.preview_window.transient(self.winfo_toplevel())
+        self.preview_window.resizable(True, True)
+        center_window(self.preview_window, 760, 560, parent=self.winfo_toplevel())
+        self.preview_window.protocol("WM_DELETE_WINDOW", self._close_preview_window)
+
+        container = ttk.Frame(self.preview_window, padding=12)
+        container.pack(fill="both", expand=True)
+        container.columnconfigure(0, weight=1)
+        container.rowconfigure(1, weight=1)
+
+        header = ttk.Frame(container)
+        header.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        header.columnconfigure(0, weight=1)
+        ttk.Label(header, text="Vista previa del recibo", style="POSSection.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Button(header, text="Cerrar", style="POSDanger.TButton", command=self._close_preview_window).grid(row=0, column=1, sticky="e")
+
+        text_frame = ttk.Frame(container)
+        text_frame.grid(row=1, column=0, sticky="nsew")
+        text_frame.rowconfigure(0, weight=1)
+        text_frame.columnconfigure(0, weight=1)
+
+        self.preview_text = tk.Text(text_frame, font=("Courier New", 10), wrap=tk.NONE)
+        self.preview_text.grid(row=0, column=0, sticky="nsew")
+        y_scroll = ttk.Scrollbar(text_frame, orient="vertical", command=self.preview_text.yview)
+        x_scroll = ttk.Scrollbar(text_frame, orient="horizontal", command=self.preview_text.xview)
+        self.preview_text.configure(yscrollcommand=y_scroll.set, xscrollcommand=x_scroll.set)
+        y_scroll.grid(row=0, column=1, sticky="ns")
+        x_scroll.grid(row=1, column=0, sticky="ew")
+
+        self.preview_visible = True
+        self.preview_button.config(text="Cerrar vista previa")
+        self.preview_label_var.set("Vista previa abierta")
+        self.refresh_preview()
+
+    def _close_preview_window(self):
+        if self.preview_window and self.preview_window.winfo_exists():
+            self.preview_window.destroy()
+        self.preview_window = None
+        self.preview_text = None
+        self.preview_visible = False
+        if hasattr(self, "preview_button"):
+            self.preview_button.config(text="Vista previa")
+        self.preview_label_var.set("Vista previa disponible")
+
+    def _close_summary_window(self):
+        if self.summary_window and self.summary_window.winfo_exists():
+            self.summary_window.destroy()
+        self.summary_window = None
+
+    def _close_payment_window(self):
+        if self.payment_window and self.payment_window.winfo_exists():
+            self.payment_window.destroy()
+        self.payment_window = None
+        self.monto_entry = None
+
+
+SalesFrame = UnifiedPOSFrame
+WholesaleSalesFrame = UnifiedPOSFrame

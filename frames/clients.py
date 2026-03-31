@@ -1,242 +1,194 @@
 """
-frames/clients.py - Módulo de Gestión de Clientes
-Maneja el registro, edición, eliminación y consulta de clientes
+frames/clients.py
+Módulo de gestión de clientes.
 """
 
-import tkinter as tk
-from tkinter import ttk, messagebox
-from tkinter import filedialog
 from datetime import datetime
 import csv
 import re
+import tkinter as tk
+from tkinter import filedialog, messagebox, ttk
+
+from .ui import create_modal
 
 
 class ClientsFrame(ttk.Frame):
     """Frame para gestión completa de clientes."""
 
     def __init__(self, parent, app):
-        super().__init__(parent, padding="10")
+        super().__init__(parent, padding=10)
         self.app = app
         self.db = app.db
-        self.setup_ui()
-        self.load_clients()
 
-    def setup_ui(self):
-        """Configura la interfaz de usuario."""
-
-        # Título principal
-        title_label = ttk.Label(
-            self, text="GESTIÓN DE CLIENTES ✅ FUNCIONAL", font=("Arial", 16, "bold")
-        )
-        title_label.pack(pady=(0, 20))
-
-        # Frame principal con dos columnas
-        main_frame = ttk.Frame(self)
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
-
-        # ============ COLUMNA IZQUIERDA - FORMULARIO ============
-        left_frame = ttk.LabelFrame(
-            main_frame, text="Información del Cliente", padding=15
-        )
-        left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
-
-        # Variables del formulario
         self.nombre_var = tk.StringVar()
         self.apellido_var = tk.StringVar()
         self.dni_var = tk.StringVar()
         self.telefono_var = tk.StringVar()
         self.email_var = tk.StringVar()
-        self.direccion_var = tk.StringVar()
         self.activo_var = tk.BooleanVar(value=True)
+        self.mayorista_var = tk.BooleanVar(value=False)
+        self.search_var = tk.StringVar()
+        self.filter_var = tk.StringVar(value="todos")
         self.cliente_id_seleccionado = None
 
-        # Nombre
-        ttk.Label(left_frame, text="Nombre *:").grid(
-            row=0, column=0, sticky="w", pady=5
-        )
-        self.nombre_entry = ttk.Entry(
-            left_frame, textvariable=self.nombre_var, width=30
-        )
-        self.nombre_entry.grid(row=0, column=1, columnspan=2, sticky="ew", pady=5)
+        self._build_ui()
+        self.load_clients()
 
-        # Apellido
-        ttk.Label(left_frame, text="Apellido *:").grid(
-            row=1, column=0, sticky="w", pady=5
-        )
-        self.apellido_entry = ttk.Entry(
-            left_frame, textvariable=self.apellido_var, width=30
-        )
-        self.apellido_entry.grid(row=1, column=1, columnspan=2, sticky="ew", pady=5)
+    def _build_ui(self):
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(1, weight=1)
 
-        # DNI/Identidad
-        ttk.Label(left_frame, text="DNI/Identidad:").grid(
-            row=2, column=0, sticky="w", pady=5
-        )
-        self.dni_entry = ttk.Entry(left_frame, textvariable=self.dni_var, width=30)
-        self.dni_entry.grid(row=2, column=1, columnspan=2, sticky="ew", pady=5)
-
-        # Teléfono
-        ttk.Label(left_frame, text="Teléfono:").grid(
-            row=3, column=0, sticky="w", pady=5
-        )
-        self.telefono_entry = ttk.Entry(
-            left_frame, textvariable=self.telefono_var, width=30
-        )
-        self.telefono_entry.grid(row=3, column=1, columnspan=2, sticky="ew", pady=5)
-
-        # Email
-        ttk.Label(left_frame, text="Email:").grid(row=4, column=0, sticky="w", pady=5)
-        self.email_entry = ttk.Entry(left_frame, textvariable=self.email_var, width=30)
-        self.email_entry.grid(row=4, column=1, columnspan=2, sticky="ew", pady=5)
-
-        # Dirección
-        ttk.Label(left_frame, text="Dirección:").grid(
-            row=5, column=0, sticky="w", pady=5
-        )
-        self.direccion_text = tk.Text(left_frame, height=3, width=30)
-        self.direccion_text.grid(row=5, column=1, columnspan=2, sticky="ew", pady=5)
-
-        # Estado activo
-        self.activo_check = ttk.Checkbutton(
-            left_frame, text="Cliente Activo", variable=self.activo_var
-        )
-        self.activo_check.grid(row=6, column=1, sticky="w", pady=10)
-
-        # Botones de acción
-        buttons_frame = ttk.Frame(left_frame)
-        buttons_frame.grid(row=7, column=0, columnspan=3, pady=15, sticky="ew")
-
-        ttk.Button(
-            buttons_frame,
-            text="💾 Guardar",
-            command=self.save_client,
-            style="Accent.TButton",
-        ).pack(side=tk.LEFT, padx=5)
-        ttk.Button(buttons_frame, text="✏️ Editar", command=self.edit_client).pack(
-            side=tk.LEFT, padx=5
-        )
-        ttk.Button(buttons_frame, text="🗑️ Eliminar", command=self.delete_client).pack(
-            side=tk.LEFT, padx=5
-        )
-        ttk.Button(buttons_frame, text="🔄 Limpiar", command=self.clear_form).pack(
-            side=tk.LEFT, padx=5
+        ttk.Label(self, text="Gestión de clientes", style="Header.TLabel").grid(
+            row=0, column=0, sticky="w", pady=(0, 14)
         )
 
-        # Configurar expansión de columnas
-        left_frame.columnconfigure(1, weight=1)
+        main = ttk.Frame(self, style="App.TFrame")
+        main.grid(row=1, column=0, sticky="nsew")
+        main.columnconfigure(0, weight=5)
+        main.columnconfigure(1, weight=7)
+        main.rowconfigure(0, weight=1)
 
-        # ============ COLUMNA DERECHA - LISTA Y CONTROLES ============
-        right_frame = ttk.Frame(main_frame)
-        right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        self._build_form_card(main)
+        self._build_list_card(main)
 
-        # Marco de búsqueda
-        search_frame = ttk.LabelFrame(right_frame, text="Búsqueda", padding=10)
-        search_frame.pack(fill=tk.X, pady=(0, 10))
+    def _build_form_card(self, parent):
+        form_card = ttk.LabelFrame(parent, text="Información del cliente", style="Card.TLabelframe")
+        form_card.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        form_card.columnconfigure(1, weight=1)
 
-        self.search_var = tk.StringVar()
-        self.search_var.trace("w", self.search_clients)
-        ttk.Label(search_frame, text="Buscar:").pack(side=tk.LEFT, padx=5)
-        search_entry = ttk.Entry(search_frame, textvariable=self.search_var, width=25)
-        search_entry.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
+        fields = [
+            ("Nombre *", self.nombre_var),
+            ("Apellido *", self.apellido_var),
+            ("DNI/Identidad", self.dni_var),
+            ("Teléfono", self.telefono_var),
+            ("Email", self.email_var),
+        ]
 
-        # Filtro por estado
-        self.filter_var = tk.StringVar(value="todos")
-        filter_frame = ttk.Frame(search_frame)
-        filter_frame.pack(side=tk.RIGHT, padx=10)
-        ttk.Label(filter_frame, text="Estado:").pack(side=tk.LEFT)
+        row = 0
+        for label, var in fields:
+            ttk.Label(form_card, text=f"{label}:", style="FormLabel.TLabel").grid(
+                row=row, column=0, sticky="w", padx=4, pady=6
+            )
+            ttk.Entry(form_card, textvariable=var).grid(
+                row=row, column=1, columnspan=2, sticky="ew", padx=4, pady=6
+            )
+            row += 1
+
+        ttk.Label(form_card, text="Dirección:", style="FormLabel.TLabel").grid(
+            row=row, column=0, sticky="nw", padx=4, pady=6
+        )
+        self.direccion_text = tk.Text(form_card, height=4, wrap=tk.WORD, relief="solid", borderwidth=1)
+        self.direccion_text.grid(row=row, column=1, columnspan=2, sticky="ew", padx=4, pady=6)
+        row += 1
+
+        ttk.Checkbutton(form_card, text="Cliente activo", variable=self.activo_var).grid(
+            row=row, column=1, sticky="w", padx=4, pady=(8, 4)
+        )
+        ttk.Checkbutton(form_card, text="Cliente mayorista", variable=self.mayorista_var).grid(
+            row=row, column=2, sticky="w", padx=4, pady=(8, 4)
+        )
+        row += 1
+
+        actions = ttk.Frame(form_card, style="Surface.TFrame")
+        actions.grid(row=row, column=0, columnspan=3, sticky="ew", pady=(14, 6))
+        actions.columnconfigure((0, 1, 2, 3), weight=1)
+
+        ttk.Button(actions, text="Guardar", style="Primary.TButton", command=self.save_client).grid(
+            row=0, column=0, sticky="ew", padx=4
+        )
+        ttk.Button(actions, text="Editar", style="Secondary.TButton", command=self.edit_client).grid(
+            row=0, column=1, sticky="ew", padx=4
+        )
+        ttk.Button(actions, text="Eliminar", style="Danger.TButton", command=self.delete_client).grid(
+            row=0, column=2, sticky="ew", padx=4
+        )
+        ttk.Button(actions, text="Limpiar", style="Secondary.TButton", command=self.clear_form).grid(
+            row=0, column=3, sticky="ew", padx=4
+        )
+
+    def _build_list_card(self, parent):
+        list_card = ttk.LabelFrame(parent, text="Listado de clientes", style="Card.TLabelframe")
+        list_card.grid(row=0, column=1, sticky="nsew")
+        list_card.columnconfigure(0, weight=1)
+        list_card.rowconfigure(2, weight=1)
+
+        search_frame = ttk.Frame(list_card, style="Surface.TFrame")
+        search_frame.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        search_frame.columnconfigure(1, weight=1)
+
+        self.search_var.trace_add("write", lambda *_args: self.search_clients())
+        ttk.Label(search_frame, text="Buscar:", style="FormLabel.TLabel").grid(row=0, column=0, padx=(0, 6), sticky="w")
+        ttk.Entry(search_frame, textvariable=self.search_var).grid(row=0, column=1, sticky="ew")
+        ttk.Label(search_frame, text="Estado:", style="FormLabel.TLabel").grid(row=0, column=2, padx=(10, 6), sticky="e")
         filter_combo = ttk.Combobox(
-            filter_frame,
+            search_frame,
             textvariable=self.filter_var,
             values=["todos", "activos", "inactivos"],
             state="readonly",
-            width=10,
+            width=12,
         )
-        filter_combo.pack(side=tk.LEFT, padx=5)
-        filter_combo.bind("<<ComboboxSelected>>", lambda e: self.load_clients())
+        filter_combo.grid(row=0, column=3, sticky="e")
+        filter_combo.bind("<<ComboboxSelected>>", lambda _event: self.load_clients())
 
-        # Lista de clientes
-        list_frame = ttk.LabelFrame(right_frame, text="Lista de Clientes", padding=10)
-        list_frame.pack(fill=tk.BOTH, expand=True)
+        columns = ("ID", "Nombre", "Apellido", "DNI", "Teléfono", "Email", "Estado", "Mayorista")
+        self.tree = ttk.Treeview(list_card, columns=columns, show="headings", height=14)
+        self.tree.grid(row=2, column=0, sticky="nsew")
 
-        # Configurar Treeview
-        columns = ("ID", "Nombre", "Apellido", "DNI", "Teléfono", "Email", "Estado")
-        self.tree = ttk.Treeview(
-            list_frame, columns=columns, show="headings", height=12
-        )
+        for col, width, anchor in (
+            ("ID", 60, "center"),
+            ("Nombre", 130, "w"),
+            ("Apellido", 130, "w"),
+            ("DNI", 140, "center"),
+            ("Teléfono", 140, "center"),
+            ("Email", 180, "w"),
+            ("Estado", 90, "center"),
+            ("Mayorista", 95, "center"),
+        ):
+            self.tree.heading(col, text=col)
+            self.tree.column(col, width=width, anchor=anchor)
 
-        # Configurar encabezados
-        self.tree.heading("ID", text="ID")
-        self.tree.heading("Nombre", text="Nombre")
-        self.tree.heading("Apellido", text="Apellido")
-        self.tree.heading("DNI", text="DNI")
-        self.tree.heading("Teléfono", text="Teléfono")
-        self.tree.heading("Email", text="Email")
-        self.tree.heading("Estado", text="Estado")
+        self.tree.tag_configure("activo", foreground="black")
+        self.tree.tag_configure("inactivo", foreground="#6B7280")
 
-        # Configurar anchos de columna
-        self.tree.column("ID", width=50)
-        self.tree.column("Nombre", width=120)
-        self.tree.column("Apellido", width=120)
-        self.tree.column("DNI", width=100)
-        self.tree.column("Teléfono", width=100)
-        self.tree.column("Email", width=150)
-        self.tree.column("Estado", width=80)
+        y_scroll = ttk.Scrollbar(list_card, orient=tk.VERTICAL, command=self.tree.yview)
+        x_scroll = ttk.Scrollbar(list_card, orient=tk.HORIZONTAL, command=self.tree.xview)
+        self.tree.configure(yscrollcommand=y_scroll.set, xscrollcommand=x_scroll.set)
+        y_scroll.grid(row=2, column=1, sticky="ns")
+        x_scroll.grid(row=3, column=0, sticky="ew")
 
-        # Scrollbars
-        v_scrollbar = ttk.Scrollbar(
-            list_frame, orient=tk.VERTICAL, command=self.tree.yview
-        )
-        h_scrollbar = ttk.Scrollbar(
-            list_frame, orient=tk.HORIZONTAL, command=self.tree.xview
-        )
-        self.tree.configure(
-            yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set
-        )
-
-        # Empaquetar tree y scrollbars
-        self.tree.grid(row=0, column=0, sticky="nsew")
-        v_scrollbar.grid(row=0, column=1, sticky="ns")
-        h_scrollbar.grid(row=1, column=0, sticky="ew")
-
-        list_frame.rowconfigure(0, weight=1)
-        list_frame.columnconfigure(0, weight=1)
-
-        # Eventos del tree
         self.tree.bind("<<TreeviewSelect>>", self.on_client_select)
-        self.tree.bind("<Double-1>", lambda e: self.edit_client())
+        self.tree.bind("<Double-1>", lambda _event: self.edit_client())
 
-        # Botones de exportación/importación
-        export_frame = ttk.Frame(right_frame)
-        export_frame.pack(fill=tk.X, pady=10)
+        footer = ttk.Frame(list_card, style="Surface.TFrame")
+        footer.grid(row=4, column=0, sticky="ew", pady=(10, 0))
+        ttk.Button(footer, text="Exportar CSV", style="Secondary.TButton", command=self.export_to_csv).pack(
+            side="left", padx=(0, 6)
+        )
+        ttk.Button(footer, text="Importar CSV", style="Secondary.TButton", command=self.import_from_csv).pack(
+            side="left", padx=6
+        )
+        ttk.Button(footer, text="Estadísticas", style="Primary.TButton", command=self.show_statistics).pack(
+            side="right"
+        )
 
-        ttk.Button(
-            export_frame, text="📤 Exportar CSV", command=self.export_to_csv
-        ).pack(side=tk.LEFT, padx=5)
-        ttk.Button(
-            export_frame, text="📥 Importar CSV", command=self.import_from_csv
-        ).pack(side=tk.LEFT, padx=5)
-        ttk.Button(
-            export_frame, text="📊 Estadísticas", command=self.show_statistics
-        ).pack(side=tk.RIGHT, padx=5)
+    def _parent(self):
+        return self.winfo_toplevel()
 
-    def load_clients(self):
-        """Carga la lista de clientes desde la base de datos."""
-        # Limpiar lista actual
-        for item in self.tree.get_children():
-            self.tree.delete(item)
+    def _show_info(self, title, text):
+        messagebox.showinfo(title, text, parent=self._parent())
 
-        # Construir consulta según filtro
-        filter_estado = self.filter_var.get()
-        if filter_estado == "activos":
-            query = "SELECT * FROM Clientes WHERE activo = 1 ORDER BY apellido, nombre"
-        elif filter_estado == "inactivos":
-            query = "SELECT * FROM Clientes WHERE activo = 0 ORDER BY apellido, nombre"
-        else:
-            query = "SELECT * FROM Clientes ORDER BY apellido, nombre"
+    def _show_error(self, title, text):
+        messagebox.showerror(title, text, parent=self._parent())
 
-        clientes = self.db.fetch(query)
+    def _show_warning(self, title, text):
+        messagebox.showwarning(title, text, parent=self._parent())
 
-        for cliente in clientes:
+    def _ask_yes_no(self, title, text):
+        return messagebox.askyesno(title, text, parent=self._parent())
+
+    def _render_clients(self, rows):
+        self.tree.delete(*self.tree.get_children())
+        for cliente in rows:
             (
                 id_cliente,
                 nombre,
@@ -244,13 +196,12 @@ class ClientsFrame(ttk.Frame):
                 dni,
                 telefono,
                 email,
-                direccion,
-                fecha_registro,
+                _direccion,
+                _fecha_registro,
                 activo,
+                mayorista,
             ) = cliente
             estado = "Activo" if activo else "Inactivo"
-
-            # Insertar en el tree con tags según estado
             tag = "activo" if activo else "inactivo"
             self.tree.insert(
                 "",
@@ -263,145 +214,115 @@ class ClientsFrame(ttk.Frame):
                     telefono or "N/A",
                     email or "N/A",
                     estado,
+                    "Sí" if mayorista else "No",
                 ),
                 tags=(tag,),
             )
 
-        # Configurar colores según estado
-        self.tree.tag_configure("activo", foreground="black")
-        self.tree.tag_configure("inactivo", foreground="gray")
+    def load_clients(self):
+        """Carga la lista de clientes desde la base de datos."""
+        filter_estado = self.filter_var.get()
+        if filter_estado == "activos":
+            query = """
+                SELECT id, nombre, apellido, dni, telefono, email, direccion,
+                       fecha_registro, activo, COALESCE(mayorista, 0)
+                FROM Clientes
+                WHERE activo = 1
+                ORDER BY apellido, nombre
+            """
+        elif filter_estado == "inactivos":
+            query = """
+                SELECT id, nombre, apellido, dni, telefono, email, direccion,
+                       fecha_registro, activo, COALESCE(mayorista, 0)
+                FROM Clientes
+                WHERE activo = 0
+                ORDER BY apellido, nombre
+            """
+        else:
+            query = """
+                SELECT id, nombre, apellido, dni, telefono, email, direccion,
+                       fecha_registro, activo, COALESCE(mayorista, 0)
+                FROM Clientes
+                ORDER BY apellido, nombre
+            """
 
-    def search_clients(self, *args):
+        self._render_clients(self.db.fetch(query))
+
+    def search_clients(self):
         """Busca clientes en tiempo real."""
-        search_term = self.search_var.get().lower()
-
-        # Limpiar lista actual
-        for item in self.tree.get_children():
-            self.tree.delete(item)
-
+        search_term = self.search_var.get().strip().lower()
         if not search_term:
             self.load_clients()
             return
 
-        # Buscar en nombre, apellido, DNI, teléfono y email
         query = """
-            SELECT * FROM Clientes 
-            WHERE LOWER(nombre) LIKE ? 
-            OR LOWER(apellido) LIKE ? 
-            OR LOWER(dni) LIKE ? 
-            OR LOWER(telefono) LIKE ? 
-            OR LOWER(email) LIKE ?
+            SELECT id, nombre, apellido, dni, telefono, email, direccion,
+                   fecha_registro, activo, COALESCE(mayorista, 0)
+            FROM Clientes
+            WHERE LOWER(nombre) LIKE ?
+               OR LOWER(apellido) LIKE ?
+               OR LOWER(dni) LIKE ?
+               OR LOWER(telefono) LIKE ?
+               OR LOWER(email) LIKE ?
             ORDER BY apellido, nombre
         """
-        search_pattern = f"%{search_term}%"
-        clientes = self.db.fetch(
-            query,
-            (
-                search_pattern,
-                search_pattern,
-                search_pattern,
-                search_pattern,
-                search_pattern,
-            ),
-        )
+        pattern = f"%{search_term}%"
+        self._render_clients(self.db.fetch(query, (pattern, pattern, pattern, pattern, pattern)))
 
-        for cliente in clientes:
-            (
-                id_cliente,
-                nombre,
-                apellido,
-                dni,
-                telefono,
-                email,
-                direccion,
-                fecha_registro,
-                activo,
-            ) = cliente
-            estado = "Activo" if activo else "Inactivo"
-            tag = "activo" if activo else "inactivo"
-            self.tree.insert(
-                "",
-                tk.END,
-                values=(
-                    id_cliente,
-                    nombre,
-                    apellido,
-                    dni or "N/A",
-                    telefono or "N/A",
-                    email or "N/A",
-                    estado,
-                ),
-                tags=(tag,),
-            )
-
-        # Aplicar colores
-        self.tree.tag_configure("activo", foreground="black")
-        self.tree.tag_configure("inactivo", foreground="gray")
-
-    def on_client_select(self, event):
-        """Maneja la selección de un cliente en la lista."""
+    def on_client_select(self, _event):
         selection = self.tree.selection()
-        if selection:
-            item = self.tree.item(selection[0])
-            values = item["values"]
-            if values:
-                self.cliente_id_seleccionado = values[0]
-                # Cargar datos completos del cliente
-                self.load_client_details(self.cliente_id_seleccionado)
+        if not selection:
+            return
+        values = self.tree.item(selection[0], "values")
+        if values:
+            self.cliente_id_seleccionado = values[0]
+            self.load_client_details(self.cliente_id_seleccionado)
 
     def load_client_details(self, cliente_id):
-        """Carga los detalles completos de un cliente en el formulario."""
         cliente = self.db.fetch("SELECT * FROM Clientes WHERE id = ?", (cliente_id,))
-        if cliente:
-            cliente_data = cliente[0]
-            (
-                id_cliente,
-                nombre,
-                apellido,
-                dni,
-                telefono,
-                email,
-                direccion,
-                fecha_registro,
-                activo,
-            ) = cliente_data
+        if not cliente:
+            return
 
-            # Llenar formulario
-            self.nombre_var.set(nombre)
-            self.apellido_var.set(apellido)
-            self.dni_var.set(dni or "")
-            self.telefono_var.set(telefono or "")
-            self.email_var.set(email or "")
-            self.direccion_text.delete("1.0", tk.END)
-            self.direccion_text.insert("1.0", direccion or "")
-            self.activo_var.set(bool(activo))
+        (
+            _id_cliente,
+            nombre,
+            apellido,
+            dni,
+            telefono,
+            email,
+            direccion,
+            _fecha_registro,
+            activo,
+            mayorista,
+        ) = cliente[0]
+
+        self.nombre_var.set(nombre)
+        self.apellido_var.set(apellido)
+        self.dni_var.set(dni or "")
+        self.telefono_var.set(telefono or "")
+        self.email_var.set(email or "")
+        self.direccion_text.delete("1.0", tk.END)
+        self.direccion_text.insert("1.0", direccion or "")
+        self.activo_var.set(bool(activo))
+        self.mayorista_var.set(bool(mayorista))
 
     def validate_form(self):
-        """Valida los datos del formulario."""
         if not self.nombre_var.get().strip():
-            messagebox.showerror("Error", "El nombre es obligatorio")
-            self.nombre_entry.focus()
+            self._show_error("Error", "El nombre es obligatorio.")
             return False
-
         if not self.apellido_var.get().strip():
-            messagebox.showerror("Error", "El apellido es obligatorio")
-            self.apellido_entry.focus()
+            self._show_error("Error", "El apellido es obligatorio.")
             return False
 
-        # Validar DNI si se proporciona
         dni = self.dni_var.get().strip()
         if dni and not re.match(r"^[0-9]{13}$", dni):
-            messagebox.showerror("Error", "El DNI debe tener 13 dígitos")
-            self.dni_entry.focus()
+            self._show_error("Error", "El DNI debe tener 13 dígitos.")
             return False
 
-        # Validar email si se proporciona
         email = self.email_var.get().strip()
         if email and not re.match(r"^[^@]+@[^@]+\.[^@]+$", email):
-            messagebox.showerror("Error", "Formato de email inválido")
-            self.email_entry.focus()
+            self._show_error("Error", "Formato de email inválido.")
             return False
-
         return True
 
     def save_client(self):
@@ -416,136 +337,80 @@ class ClientsFrame(ttk.Frame):
         email = self.email_var.get().strip() or None
         direccion = self.direccion_text.get("1.0", tk.END).strip() or None
         activo = 1 if self.activo_var.get() else 0
+        mayorista = 1 if self.mayorista_var.get() else 0
 
         try:
             if self.cliente_id_seleccionado:
-                # Actualizar cliente existente
                 query = """
-                    UPDATE Clientes 
-                    SET nombre=?, apellido=?, dni=?, telefono=?, email=?, direccion=?, activo=?
+                    UPDATE Clientes
+                    SET nombre=?, apellido=?, dni=?, telefono=?, email=?, direccion=?, activo=?, mayorista=?
                     WHERE id=?
                 """
                 self.db.execute(
                     query,
-                    (
-                        nombre,
-                        apellido,
-                        dni,
-                        telefono,
-                        email,
-                        direccion,
-                        activo,
-                        self.cliente_id_seleccionado,
-                    ),
+                    (nombre, apellido, dni, telefono, email, direccion, activo, mayorista, self.cliente_id_seleccionado),
                 )
-                messagebox.showinfo("Éxito", "Cliente actualizado correctamente")
+                self._show_info("Éxito", "Cliente actualizado correctamente.")
             else:
-                # Crear nuevo cliente
                 fecha_registro = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 query = """
-                    INSERT INTO Clientes (nombre, apellido, dni, telefono, email, direccion, fecha_registro, activo)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO Clientes (nombre, apellido, dni, telefono, email, direccion, fecha_registro, activo, mayorista)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """
-                self.db.execute(
-                    query,
-                    (
-                        nombre,
-                        apellido,
-                        dni,
-                        telefono,
-                        email,
-                        direccion,
-                        fecha_registro,
-                        activo,
-                    ),
-                )
-                messagebox.showinfo("Éxito", "Cliente registrado correctamente")
+                self.db.execute(query, (nombre, apellido, dni, telefono, email, direccion, fecha_registro, activo, mayorista))
+                self._show_info("Éxito", "Cliente registrado correctamente.")
 
             self.clear_form()
             self.load_clients()
-
-        except Exception as e:
-            if "UNIQUE constraint failed" in str(e):
-                messagebox.showerror(
-                    "Error", "El DNI ya está registrado para otro cliente"
-                )
+        except Exception as exc:
+            if "UNIQUE constraint failed" in str(exc):
+                self._show_error("Error", "El DNI ya está registrado para otro cliente.")
             else:
-                messagebox.showerror("Error", f"Error al guardar cliente: {e}")
+                self._show_error("Error", f"Error al guardar cliente: {exc}")
 
     def edit_client(self):
-        """Prepara la edición del cliente seleccionado."""
         if not self.cliente_id_seleccionado:
-            messagebox.showwarning("Advertencia", "Seleccione un cliente para editar")
+            self._show_warning("Advertencia", "Seleccione un cliente para editar.")
             return
-
-        # Los datos ya están cargados en el formulario por on_client_select
-        messagebox.showinfo(
-            "Modo Edición",
-            "Modifique los campos y presione 'Guardar' para confirmar los cambios",
-        )
+        self._show_info("Modo edición", "Modifique los campos y presione Guardar para confirmar.")
 
     def delete_client(self):
-        """Elimina el cliente seleccionado."""
         if not self.cliente_id_seleccionado:
-            messagebox.showwarning("Advertencia", "Seleccione un cliente para eliminar")
+            self._show_warning("Advertencia", "Seleccione un cliente para eliminar.")
             return
 
-        # Verificar si el cliente tiene ventas asociadas
-        ventas = self.db.fetch(
-            "SELECT COUNT(*) FROM Ventas WHERE id_cliente = ?",
-            (self.cliente_id_seleccionado,),
-        )
+        ventas = self.db.fetch("SELECT COUNT(*) FROM Ventas WHERE id_cliente = ?", (self.cliente_id_seleccionado,))
         tiene_ventas = ventas[0][0] > 0 if ventas else False
 
         if tiene_ventas:
-            respuesta = messagebox.askyesno(
-                "Cliente con Ventas",
-                "Este cliente tiene ventas registradas.\n¿Desea desactivarlo en lugar de eliminarlo?\n\n"
-                "Sí = Desactivar (recomendado)\nNo = Eliminar permanentemente",
+            respuesta = self._ask_yes_no(
+                "Cliente con ventas",
+                "Este cliente tiene ventas registradas.\n¿Desea desactivarlo en lugar de eliminarlo?\n\nSí = Desactivar\nNo = Eliminar permanentemente",
             )
             if respuesta:
-                # Desactivar cliente
-                self.db.execute(
-                    "UPDATE Clientes SET activo = 0 WHERE id = ?",
-                    (self.cliente_id_seleccionado,),
-                )
-                messagebox.showinfo("Éxito", "Cliente desactivado correctamente")
+                self.db.execute("UPDATE Clientes SET activo = 0 WHERE id = ?", (self.cliente_id_seleccionado,))
+                self._show_info("Éxito", "Cliente desactivado correctamente.")
             else:
-                # Confirmar eliminación definitiva
-                if messagebox.askyesno(
+                if self._ask_yes_no(
                     "Confirmación",
-                    "⚠️ ADVERTENCIA: Se eliminarán también todas las ventas asociadas.\n¿Continuar?",
+                    "Advertencia: se eliminarán también las ventas asociadas.\n¿Continuar?",
                 ):
                     self.db.execute(
                         "DELETE FROM DetalleVenta WHERE venta_id IN (SELECT id FROM Ventas WHERE id_cliente = ?)",
                         (self.cliente_id_seleccionado,),
                     )
-                    self.db.execute(
-                        "DELETE FROM Ventas WHERE id_cliente = ?",
-                        (self.cliente_id_seleccionado,),
-                    )
-                    self.db.execute(
-                        "DELETE FROM Clientes WHERE id = ?",
-                        (self.cliente_id_seleccionado,),
-                    )
-                    messagebox.showinfo(
-                        "Éxito", "Cliente y ventas asociadas eliminados"
-                    )
+                    self.db.execute("DELETE FROM Ventas WHERE id_cliente = ?", (self.cliente_id_seleccionado,))
+                    self.db.execute("DELETE FROM Clientes WHERE id = ?", (self.cliente_id_seleccionado,))
+                    self._show_info("Éxito", "Cliente y ventas asociadas eliminados.")
         else:
-            # Cliente sin ventas, eliminación simple
-            if messagebox.askyesno(
-                "Confirmación", "¿Está seguro de eliminar este cliente?"
-            ):
-                self.db.execute(
-                    "DELETE FROM Clientes WHERE id = ?", (self.cliente_id_seleccionado,)
-                )
-                messagebox.showinfo("Éxito", "Cliente eliminado correctamente")
+            if self._ask_yes_no("Confirmación", "¿Está seguro de eliminar este cliente?"):
+                self.db.execute("DELETE FROM Clientes WHERE id = ?", (self.cliente_id_seleccionado,))
+                self._show_info("Éxito", "Cliente eliminado correctamente.")
 
         self.clear_form()
         self.load_clients()
 
     def clear_form(self):
-        """Limpia el formulario."""
         self.nombre_var.set("")
         self.apellido_var.set("")
         self.dni_var.set("")
@@ -553,145 +418,110 @@ class ClientsFrame(ttk.Frame):
         self.email_var.set("")
         self.direccion_text.delete("1.0", tk.END)
         self.activo_var.set(True)
+        self.mayorista_var.set(False)
         self.cliente_id_seleccionado = None
-
-        # Limpiar selección en la lista
         for item in self.tree.selection():
             self.tree.selection_remove(item)
 
     def export_to_csv(self):
-        """Exporta la lista de clientes a CSV."""
         filename = filedialog.asksaveasfilename(
             defaultextension=".csv",
             filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
-            title="Exportar Clientes",
+            title="Exportar clientes",
         )
+        if not filename:
+            return
 
-        if filename:
-            try:
-                clientes = self.db.fetch(
-                    "SELECT * FROM Clientes ORDER BY apellido, nombre"
+        try:
+            clientes = self.db.fetch("SELECT * FROM Clientes ORDER BY apellido, nombre")
+            with open(filename, "w", newline="", encoding="utf-8") as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow(
+                    ["ID", "Nombre", "Apellido", "DNI", "Teléfono", "Email", "Dirección", "Fecha Registro", "Activo", "Mayorista"]
                 )
-
-                with open(filename, "w", newline="", encoding="utf-8") as csvfile:
-                    writer = csv.writer(csvfile)
-                    # Encabezados
-                    writer.writerow(
-                        [
-                            "ID",
-                            "Nombre",
-                            "Apellido",
-                            "DNI",
-                            "Teléfono",
-                            "Email",
-                            "Dirección",
-                            "Fecha Registro",
-                            "Activo",
-                        ]
-                    )
-
-                    # Datos
-                    for cliente in clientes:
-                        writer.writerow(cliente)
-
-                messagebox.showinfo("Éxito", f"Clientes exportados a {filename}")
-
-            except Exception as e:
-                messagebox.showerror("Error", f"Error al exportar: {e}")
+                writer.writerows(clientes)
+            self._show_info("Éxito", f"Clientes exportados a:\n{filename}")
+        except Exception as exc:
+            self._show_error("Error", f"Error al exportar: {exc}")
 
     def import_from_csv(self):
-        """Importa clientes desde un archivo CSV."""
         filename = filedialog.askopenfilename(
             filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
-            title="Importar Clientes",
+            title="Importar clientes",
         )
+        if not filename:
+            return
 
-        if filename:
-            try:
-                imported_count = 0
-                skipped_count = 0
+        try:
+            imported_count = 0
+            skipped_count = 0
+            with open(filename, "r", encoding="utf-8") as csvfile:
+                reader = csv.DictReader(csvfile)
+                for row in reader:
+                    try:
+                        if not row.get("Nombre") or not row.get("Apellido"):
+                            skipped_count += 1
+                            continue
 
-                with open(filename, "r", encoding="utf-8") as csvfile:
-                    reader = csv.DictReader(csvfile)
-
-                    for row in reader:
-                        try:
-                            # Validar campos obligatorios
-                            if not row.get("Nombre") or not row.get("Apellido"):
-                                skipped_count += 1
-                                continue
-
-                            fecha_registro = datetime.now().strftime(
-                                "%Y-%m-%d %H:%M:%S"
-                            )
-
-                            query = """
-                                INSERT INTO Clientes (nombre, apellido, dni, telefono, email, direccion, fecha_registro, activo)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        fecha_registro = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        mayorista = 1 if row.get("Mayorista", "0") in ("1", "Sí", "Si", "si", "true", "True") else 0
+                        self.db.execute(
                             """
-                            self.db.execute(
-                                query,
-                                (
-                                    row["Nombre"],
-                                    row["Apellido"],
-                                    row.get("DNI") or None,
-                                    row.get("Teléfono") or None,
-                                    row.get("Email") or None,
-                                    row.get("Dirección") or None,
-                                    fecha_registro,
-                                    1 if row.get("Activo", "1") == "1" else 0,
-                                ),
-                            )
-                            imported_count += 1
+                                INSERT INTO Clientes (nombre, apellido, dni, telefono, email, direccion, fecha_registro, activo, mayorista)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            (
+                                row["Nombre"],
+                                row["Apellido"],
+                                row.get("DNI") or None,
+                                row.get("Teléfono") or None,
+                                row.get("Email") or None,
+                                row.get("Dirección") or None,
+                                fecha_registro,
+                                1 if row.get("Activo", "1") == "1" else 0,
+                                mayorista,
+                            ),
+                        )
+                        imported_count += 1
+                    except Exception as exc:
+                        if "UNIQUE constraint failed" not in str(exc):
+                            skipped_count += 1
 
-                        except Exception as e:
-                            if "UNIQUE constraint failed" not in str(e):
-                                skipped_count += 1
-
-                self.load_clients()
-                messagebox.showinfo(
-                    "Importación Completa",
-                    f"Clientes importados: {imported_count}\nRegistros omitidos: {skipped_count}",
-                )
-
-            except Exception as e:
-                messagebox.showerror("Error", f"Error al importar: {e}")
+            self.load_clients()
+            self._show_info(
+                "Importación completa",
+                f"Clientes importados: {imported_count}\nRegistros omitidos: {skipped_count}",
+            )
+        except Exception as exc:
+            self._show_error("Error", f"Error al importar: {exc}")
 
     def show_statistics(self):
-        """Muestra estadísticas de clientes."""
         try:
-            total_clientes = self.db.fetch("SELECT COUNT(*) FROM Clientes")[0][0]
-            clientes_activos = self.db.fetch(
-                "SELECT COUNT(*) FROM Clientes WHERE activo = 1"
-            )[0][0]
-            clientes_inactivos = total_clientes - clientes_activos
+            total = self.db.fetch("SELECT COUNT(*) FROM Clientes")[0][0]
+            activos = self.db.fetch("SELECT COUNT(*) FROM Clientes WHERE activo = 1")[0][0]
+            inactivos = total - activos
+            con_ventas = self.db.fetch("SELECT COUNT(DISTINCT id_cliente) FROM Ventas WHERE id_cliente IS NOT NULL")[0][0]
+            inicio_mes = datetime.now().strftime("%Y-%m-01")
+            este_mes = self.db.fetch("SELECT COUNT(*) FROM Clientes WHERE fecha_registro >= ?", (inicio_mes,))[0][0]
 
-            # Clientes con ventas
-            clientes_con_ventas = self.db.fetch(
-                "SELECT COUNT(DISTINCT id_cliente) FROM Ventas WHERE id_cliente IS NOT NULL"
-            )[0][0]
+            popup = create_modal(self._parent(), "Estadísticas de clientes", width=520, height=350)
+            content = ttk.Frame(popup, padding=18, style="Surface.TFrame")
+            content.pack(fill="both", expand=True)
 
-            # Clientes registrados este mes
-            fecha_inicio_mes = datetime.now().strftime("%Y-%m-01")
-            clientes_este_mes = self.db.fetch(
-                "SELECT COUNT(*) FROM Clientes WHERE fecha_registro >= ?",
-                (fecha_inicio_mes,),
-            )[0][0]
+            ttk.Label(content, text="Resumen de clientes", style="Subheader.TLabel").pack(anchor="w", pady=(0, 12))
+            ttk.Label(content, text=f"Total de clientes: {total}", style="FormLabel.TLabel").pack(anchor="w", pady=3)
+            ttk.Label(content, text=f"Clientes activos: {activos}", style="FormLabel.TLabel").pack(anchor="w", pady=3)
+            ttk.Label(content, text=f"Clientes inactivos: {inactivos}", style="FormLabel.TLabel").pack(anchor="w", pady=3)
+            ttk.Label(content, text=f"Clientes con ventas: {con_ventas}", style="FormLabel.TLabel").pack(anchor="w", pady=3)
+            ttk.Label(content, text=f"Registrados este mes: {este_mes}", style="FormLabel.TLabel").pack(anchor="w", pady=3)
 
-            stats_text = f"""
-📊 ESTADÍSTICAS DE CLIENTES
+            actividad = (activos / total * 100) if total else 0
+            compradores = (con_ventas / total * 100) if total else 0
+            ttk.Label(content, text=f"Actividad: {actividad:.1f}%", style="Muted.TLabel").pack(anchor="w", pady=(12, 2))
+            ttk.Label(content, text=f"Clientes compradores: {compradores:.1f}%", style="Muted.TLabel").pack(anchor="w", pady=2)
 
-👥 Total de clientes: {total_clientes}
-✅ Clientes activos: {clientes_activos}
-❌ Clientes inactivos: {clientes_inactivos}
-🛒 Clientes con ventas: {clientes_con_ventas}
-📅 Registrados este mes: {clientes_este_mes}
-
-💼 Porcentaje de actividad: {(clientes_activos/total_clientes*100):.1f}% (activos)
-🛍️ Porcentaje con compras: {(clientes_con_ventas/total_clientes*100):.1f}% (compradores)
-            """.strip()
-
-            messagebox.showinfo("Estadísticas de Clientes", stats_text)
-
-        except Exception as e:
-            messagebox.showerror("Error", f"Error al calcular estadísticas: {e}")
+            ttk.Button(content, text="Cerrar", style="Primary.TButton", command=popup.destroy).pack(
+                anchor="e", pady=(20, 0)
+            )
+        except Exception as exc:
+            self._show_error("Error", f"Error al calcular estadísticas: {exc}")
