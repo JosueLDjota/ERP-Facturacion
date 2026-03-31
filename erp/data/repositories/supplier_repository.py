@@ -24,23 +24,19 @@ class SupplierRepository:
 
     def save(self, supplier_id: str | None, nombre: str, contacto: str, telefono: str) -> int:
         if supplier_id:
-            self.db.execute(
+            self.db.execute_checked(
                 "UPDATE Proveedores SET nombre=?, contacto=?, telefono=? WHERE id=?",
                 (nombre, contacto, telefono, int(supplier_id)),
             )
-            if self.db.last_error:
-                raise RepositoryError(str(self.db.last_error))
             return int(supplier_id)
 
-        new_id = self.db.execute(
+        new_id = self.db.execute_checked(
             "INSERT INTO Proveedores (nombre, contacto, telefono) VALUES (?, ?, ?)",
             (nombre, contacto, telefono),
         )
-        if self.db.last_error or new_id is None:
-            raise RepositoryError(str(self.db.last_error or "No se pudo crear proveedor."))
+        if new_id is None:
+            raise RepositoryError("No se pudo crear proveedor.")
         return int(new_id)
 
     def delete(self, supplier_id: int) -> None:
-        self.db.execute("DELETE FROM Proveedores WHERE id=?", (supplier_id,))
-        if self.db.last_error:
-            raise RepositoryError(str(self.db.last_error))
+        self.db.execute_checked("DELETE FROM Proveedores WHERE id=?", (supplier_id,))

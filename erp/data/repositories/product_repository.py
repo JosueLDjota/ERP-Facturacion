@@ -51,7 +51,7 @@ class ProductRepository:
 
     def save(self, product: Product) -> int:
         if product.id:
-            self.db.execute(
+            self.db.execute_checked(
                 """
                 UPDATE Productos
                 SET nombre=?, descripcion=?, precio=?, stock=?, proveedor_id=?
@@ -66,11 +66,9 @@ class ProductRepository:
                     product.id,
                 ),
             )
-            if self.db.last_error:
-                raise RepositoryError(str(self.db.last_error))
             return int(product.id)
 
-        new_id = self.db.execute(
+        new_id = self.db.execute_checked(
             """
             INSERT INTO Productos (nombre, descripcion, precio, stock, proveedor_id)
             VALUES (?, ?, ?, ?, ?)
@@ -83,14 +81,12 @@ class ProductRepository:
                 product.proveedor_id,
             ),
         )
-        if self.db.last_error or new_id is None:
-            raise RepositoryError(str(self.db.last_error or "No se pudo insertar producto."))
+        if new_id is None:
+            raise RepositoryError("No se pudo insertar producto.")
         return int(new_id)
 
     def delete(self, product_id: int) -> None:
-        self.db.execute("DELETE FROM Productos WHERE id = ?", (product_id,))
-        if self.db.last_error:
-            raise RepositoryError(str(self.db.last_error))
+        self.db.execute_checked("DELETE FROM Productos WHERE id = ?", (product_id,))
 
     def import_many(self, products: Iterable[Product]) -> int:
         count = 0

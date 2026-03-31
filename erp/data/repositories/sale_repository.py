@@ -100,54 +100,50 @@ class SaleRepository:
         items: list[dict],
     ) -> None:
         try:
-            cursor = self.db.conn.cursor()
-            cursor.execute("BEGIN")
-            cursor.execute(
-                """
-                INSERT INTO Ventas (id, fecha, total, monto_pagado, vuelto, usuario_id, id_cliente, tipo_recibo)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (sale_id, fecha, total, pagado, vuelto, usuario_id, cliente_id, tipo_recibo),
-            )
-
-            for item in items:
-                producto_id = int(item["producto_id"])
-                cantidad = int(item["cantidad"])
-                precio = float(item["precio_unitario"])
-                pct = float(item.get("descuento_porcentaje", 0))
-                discount_amount = (precio * cantidad) * pct
-                subtotal = (precio * cantidad) - discount_amount
-
-                stock_row = cursor.execute(
-                    "SELECT stock FROM Productos WHERE id = ?",
-                    (producto_id,),
-                ).fetchone()
-                if not stock_row:
-                    raise RepositoryError(f"Producto {producto_id} no existe.")
-                if int(stock_row[0]) < cantidad:
-                    raise RepositoryError(f"Stock insuficiente para producto {producto_id}.")
-
-                cursor.execute(
+            with self.db.transaction():
+                self.db.execute_checked(
                     """
-                    INSERT INTO DetalleVenta (venta_id, producto_id, nombre_producto, cantidad, precio_unitario, descuento, subtotal)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO Ventas (id, fecha, total, monto_pagado, vuelto, usuario_id, id_cliente, tipo_recibo)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (
-                        sale_id,
-                        producto_id,
-                        str(item["nombre"]),
-                        cantidad,
-                        precio,
-                        discount_amount,
-                        subtotal,
-                    ),
-                )
-                cursor.execute(
-                    "UPDATE Productos SET stock = stock - ? WHERE id = ?",
-                    (cantidad, producto_id),
+                    (sale_id, fecha, total, pagado, vuelto, usuario_id, cliente_id, tipo_recibo),
                 )
 
-            self.db.conn.commit()
+                for item in items:
+                    producto_id = int(item["producto_id"])
+                    cantidad = int(item["cantidad"])
+                    precio = float(item["precio_unitario"])
+                    pct = float(item.get("descuento_porcentaje", 0))
+                    discount_amount = (precio * cantidad) * pct
+                    subtotal = (precio * cantidad) - discount_amount
+
+                    stock_row = self.db.fetch_one(
+                        "SELECT stock FROM Productos WHERE id = ?",
+                        (producto_id,),
+                    )
+                    if not stock_row:
+                        raise RepositoryError(f"Producto {producto_id} no existe.")
+                    if int(stock_row[0]) < cantidad:
+                        raise RepositoryError(f"Stock insuficiente para producto {producto_id}.")
+
+                    self.db.execute_checked(
+                        """
+                        INSERT INTO DetalleVenta (venta_id, producto_id, nombre_producto, cantidad, precio_unitario, descuento, subtotal)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            sale_id,
+                            producto_id,
+                            str(item["nombre"]),
+                            cantidad,
+                            precio,
+                            discount_amount,
+                            subtotal,
+                        ),
+                    )
+                    self.db.execute_checked(
+                        "UPDATE Productos SET stock = stock - ? WHERE id = ?",
+                        (cantidad, producto_id),
+                    )
         except Exception as exc:
-            self.db.conn.rollback()
             raise RepositoryError(str(exc)) from exc

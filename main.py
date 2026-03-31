@@ -4,10 +4,12 @@ Punto de entrada de la aplicacion ERP.
 """
 
 from pathlib import Path
+import logging
 import tkinter as tk
 from tkinter import messagebox, ttk
-
+from PIL import Image, ImageTk
 from database import DBManager
+from erp.domain.use_cases.auth_use_case import AuthService
 from file_manager import FileManager
 from frames import (
     ClientsFrame,
@@ -33,12 +35,15 @@ class ERPApp(tk.Tk):
         self.minsize(1200, 760)
         self.base_dir = Path(__file__).resolve().parent
 
+        self._configure_logging()
         self.db = DBManager()
+        self.auth_service = AuthService(self.db)
         self.file_manager = FileManager(self.db)
         self.notification_manager = NotificationManager(self, self.db)
         self.current_user = None
         self.nav_widgets = {}
         self.current_section = tk.StringVar(value="Dashboard")
+        self.login_feedback_var = tk.StringVar(value="")
 
         self.style = apply_app_theme(self)
         self._setup_window_icon()
@@ -46,16 +51,18 @@ class ERPApp(tk.Tk):
 
     def _setup_window_icon(self):
         icon_candidates = [
-            resolve_resource_path("assets", "icons", "app.ico"),
-            resolve_resource_path("assets", "app.ico"),
-            self.base_dir / "app.ico",
+            resolve_resource_path("assets", "logo.ico"),  # ← Busca logo.ico directamente en assets
+            resolve_resource_path("assets", "icons", "logo.ico"),  # ← Si está dentro de icons
+            self.base_dir / "assets" / "logo.ico",  # ← Ruta directa
+            self.base_dir / "logo.ico",  # ← Respaldo en raíz
         ]
         for icon_path in icon_candidates:
             if icon_path.exists():
                 try:
                     self.iconbitmap(default=str(icon_path))
-                except Exception:
-                    pass
+                    print(f"Ícono cargado: {icon_path}")  # Para verificar
+                except Exception as e:
+                    print(f"Error: {e}")
                 break
 
     def show_login(self):
@@ -68,19 +75,61 @@ class ERPApp(tk.Tk):
         intro = ttk.Frame(self.login_frame, padding=36, style="AltSurface.TFrame")
         intro.grid(row=0, column=0, sticky="nsew", padx=(0, 14))
         intro.columnconfigure(0, weight=1)
-        intro.rowconfigure(3, weight=1)
+        intro.rowconfigure(4, weight=1)
 
-        ttk.Label(intro, text="TECH SISTEMS ERP", style="IntroTitle.TLabel").grid(row=0, column=0, sticky="w")
+        # ========== AGREGAR LOGO AQUÍ ==========
+        logo_cargado = False
+
+        try:
+            logo_path = resolve_resource_path("assets", "logo.jpg")
+
+            if logo_path.exists():
+                # Cargar JPG con Pillow
+                img = Image.open(logo_path)
+
+                # Redimensionar si quieres
+                img = img.resize((180, 180))   # ajusta este tamaño a gusto
+
+                self.logo_image = ImageTk.PhotoImage(img)
+
+                logo_label = ttk.Label(intro, image=self.logo_image)
+                logo_label.grid(row=0, column=0, sticky="w", pady=(0, 10))
+
+                logo_cargado = True
+            else:
+                ttk.Label(
+                    intro,
+                    text="TECH SISTEMS ERP",
+                    style="IntroTitle.TLabel"
+                ).grid(row=0, column=0, sticky="w")
+
+        except Exception as e:
+            print(f"Error cargando logo: {e}")
+            ttk.Label(
+                intro,
+                text="TECH SISTEMS ERP",
+                style="IntroTitle.TLabel"
+            ).grid(row=0, column=0, sticky="w")
+
+        texto_inicio_fila = 1 if logo_cargado else 0
+
         ttk.Label(
             intro,
-            text="Gestion comercial y punto de venta en una sola plataforma.",
+            text="Gestión comercial y punto de venta en una sola plataforma.",
             style="IntroBody.TLabel",
-        ).grid(row=1, column=0, sticky="w", pady=(10, 12))
+        ).grid(row=texto_inicio_fila, column=0, sticky="w", pady=(10, 12))
+
         ttk.Label(
             intro,
             text="Accede para administrar ventas, inventario, clientes y reportes.",
             style="IntroMuted.TLabel",
-        ).grid(row=2, column=0, sticky="w")
+        ).grid(row=texto_inicio_fila + 1, column=0, sticky="w")
+
+        ttk.Label(
+            intro,
+            text="Acceso seguro, recibos editables y notificaciones persistentes.",
+            style="Muted.TLabel",
+        ).grid(row=texto_inicio_fila + 2, column=0, sticky="w", pady=(18, 0))
 
         login_container = ttk.LabelFrame(
             self.login_frame,
@@ -91,7 +140,7 @@ class ERPApp(tk.Tk):
         login_container.grid(row=0, column=1, sticky="nsew", padx=(14, 0))
         login_container.columnconfigure(0, weight=1)
 
-        ttk.Label(login_container, text="Inicio de sesion", style="Subheader.TLabel").grid(
+        ttk.Label(login_container, text="Inicio de sesión", style="Subheader.TLabel").grid(
             row=0, column=0, sticky="w", pady=(0, 18)
         )
 
@@ -102,44 +151,82 @@ class ERPApp(tk.Tk):
         ttk.Label(fields, text="Usuario", style="FormLabel.TLabel").grid(row=0, column=0, sticky="w")
         self.username_entry = ttk.Entry(fields, width=30)
         self.username_entry.grid(row=1, column=0, sticky="ew", pady=(4, 12))
-        self.username_entry.insert(0, "admin")
 
-        ttk.Label(fields, text="Contrasena", style="FormLabel.TLabel").grid(row=2, column=0, sticky="w")
+        ttk.Label(fields, text="Contraseña", style="FormLabel.TLabel").grid(row=2, column=0, sticky="w")
         self.password_entry = ttk.Entry(fields, show="*", width=30)
         self.password_entry.grid(row=3, column=0, sticky="ew", pady=(4, 18))
-        self.password_entry.insert(0, "1234")
+        self.password_entry.bind("<Return>", lambda _event: self.authenticate())
+
+        ttk.Label(
+            fields,
+            textvariable=self.login_feedback_var,
+            style="Muted.TLabel",
+            foreground="#B91C1C",
+        ).grid(row=4, column=0, sticky="w", pady=(0, 14))
 
         ttk.Button(
             login_container,
             text="Acceder",
             style="Primary.TButton",
             command=self.authenticate,
-        ).grid(row=2, column=0, sticky="ew")
+        ).grid(row=2, column=0, sticky="ew", pady=(4, 0))
 
         ttk.Label(
             login_container,
-            text="Sugerencia: Enter tambien confirma el acceso.",
+            text="Sugerencia: Enter también confirma el acceso.",
             style="Muted.TLabel",
-        ).grid(row=3, column=0, sticky="w", pady=(14, 0))
+        ).grid(row=3, column=0, sticky="", pady=(14, 0))
 
-        self.password_entry.bind("<Return>", lambda _event: self.authenticate())
+        self.after(150, self._show_bootstrap_credentials_if_needed)
+        self.after(200, self.username_entry.focus_set)
 
-    def authenticate(self):
-        username = self.username_entry.get()
-        password = self.password_entry.get()
-
-        user = self.db.fetch(
-            "SELECT id, nombre, rol FROM Usuarios WHERE usuario = ? AND contrasena = ?",
-            (username, password),
+    def _configure_logging(self):
+        logs_dir = self.base_dir / "data" / "logs"
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+            handlers=[
+                logging.FileHandler(logs_dir / "erp.log", encoding="utf-8"),
+            ],
         )
 
+    def _show_bootstrap_credentials_if_needed(self):
+        if not self.db.bootstrap_admin_password:
+            return
+
+        messagebox.showwarning(
+            "Administrador inicial",
+            "Se creó el usuario administrador inicial.\n\n"
+            "Usuario: admin\n"
+            f"Contraseña temporal: {self.db.bootstrap_admin_password}\n\n"
+            "Ingrese y cambie esa contraseña en cuanto sea posible.",
+            parent=self,
+        )
+
+    def authenticate(self):
+        username = self.username_entry.get().strip()
+        password = self.password_entry.get()
+
+        if not username or not password:
+            self.login_feedback_var.set("Ingrese usuario y contraseña para continuar.")
+            if not username:
+                self.username_entry.focus_set()
+            else:
+                self.password_entry.focus_set()
+            return
+
+        user = self.auth_service.authenticate(username, password)
+
         if user:
-            self.current_user = user[0]
+            self.login_feedback_var.set("")
+            self.current_user = user
             self.login_frame.destroy()
             self.notification_manager.notify_login(self.current_user[1], self.current_user[2])
             self.show_main_interface()
             return
 
+        self.login_feedback_var.set("Usuario o contraseña incorrectos. Verifique los datos.")
         messagebox.showerror("Error", "Usuario o contrasena incorrectos", parent=self)
 
     def show_main_interface(self):
@@ -147,6 +234,7 @@ class ERPApp(tk.Tk):
         self.container.pack(fill="both", expand=True)
         self.container.columnconfigure(1, weight=1)
         self.container.rowconfigure(0, weight=1)
+        self.state('zoomed')
 
         self.nav_frame = ttk.Frame(self.container, width=272, padding=18, style="Sidebar.TFrame")
         self.nav_frame.grid(row=0, column=0, sticky="ns")

@@ -78,7 +78,7 @@ class ClientRepository:
 
     def save(self, client: Client) -> int:
         if client.id:
-            self.db.execute(
+            self.db.execute_checked(
                 """
                 UPDATE Clientes
                 SET nombre=?, apellido=?, dni=?, telefono=?, email=?, direccion=?, activo=?, mayorista=?
@@ -96,12 +96,10 @@ class ClientRepository:
                     client.id,
                 ),
             )
-            if self.db.last_error:
-                raise RepositoryError(str(self.db.last_error))
             return int(client.id)
 
         created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        new_id = self.db.execute(
+        new_id = self.db.execute_checked(
             """
             INSERT INTO Clientes (nombre, apellido, dni, telefono, email, direccion, fecha_registro, activo, mayorista)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -118,14 +116,12 @@ class ClientRepository:
                 1 if client.mayorista else 0,
             ),
         )
-        if self.db.last_error or new_id is None:
-            raise RepositoryError(str(self.db.last_error or "No se pudo insertar cliente."))
+        if new_id is None:
+            raise RepositoryError("No se pudo insertar cliente.")
         return int(new_id)
 
     def delete(self, client_id: int) -> None:
-        self.db.execute("DELETE FROM Clientes WHERE id = ?", (client_id,))
-        if self.db.last_error:
-            raise RepositoryError(str(self.db.last_error))
+        self.db.execute_checked("DELETE FROM Clientes WHERE id = ?", (client_id,))
 
     def has_sales(self, client_id: int) -> bool:
         rows = self.db.fetch("SELECT COUNT(*) FROM Ventas WHERE id_cliente = ?", (client_id,))
@@ -134,6 +130,4 @@ class ClientRepository:
         return int(rows[0][0]) > 0
 
     def deactivate(self, client_id: int) -> None:
-        self.db.execute("UPDATE Clientes SET activo = 0 WHERE id = ?", (client_id,))
-        if self.db.last_error:
-            raise RepositoryError(str(self.db.last_error))
+        self.db.execute_checked("UPDATE Clientes SET activo = 0 WHERE id = ?", (client_id,))

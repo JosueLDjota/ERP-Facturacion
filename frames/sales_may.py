@@ -9,7 +9,7 @@ from datetime import datetime
 import random
 import os
 import json
-from receipt_builder import build_receipt_html
+from receipt_builder import build_receipt_html, load_receipt_labels
 
 
 class WholesaleSalesFrame(ttk.Frame):
@@ -1546,6 +1546,21 @@ Presione "PROCESAR VENTA" para finalizar.
             cliente=cliente,
             mode='letter',
             number_to_words=self.numero_a_palabras,
+            template_html=self.db.get_config("recibo_template", self.db.default_receipt_template()),
+            empresa={
+                key: value
+                for key, value in {
+                    "nombre": self.db.get_config("empresa_nombre", None),
+                    "rtn": self.db.get_config("empresa_rtn", None),
+                    "tel": self.db.get_config("empresa_tel", None),
+                    "direccion": self.db.get_config("empresa_direccion", None),
+                    "email": self.db.get_config("empresa_email", None),
+                    "logo_url": self.db.get_config("empresa_logo_url", None),
+                }.items()
+                if value
+            },
+            observaciones=self.db.get_config("recibo_observaciones", ""),
+            labels=load_receipt_labels(self.db.get_config),
         )
 
     def save_html_document(self, html_content, filename):

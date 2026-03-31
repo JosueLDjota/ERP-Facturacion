@@ -1,0 +1,188 @@
+{
+  "login:Administrador:2026-03-30 23:50": {
+    "key": "login:Administrador:2026-03-30 23:50",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "last_shown_at": "2026-03-30T23:50:14.625850",
+    "last_hash": "1abb62d039170986f7ae75387bb647aa",
+    "reminder_seconds": null,
+    "display_count": 1
+  },
+  "system:info:8a4fa81ecaa75f4ef61fca35e5dd0472": {
+    "key": "system:info:8a4fa81ecaa75f4ef61fca35e5dd0472",
+    "title": "Sistema",
+    "message": "v1.1.0",
+    "type": "info",
+    "last_shown_at": "2026-03-30T23:50:14.636690",
+    "last_hash": "92e0bfab693c91a8945dc96b33c5a8e2",
+    "reminder_seconds": null,
+    "display_count": 1,
+    "history_saved": true
+  },
+  "login:Administrador:2026-03-30 23:51": {
+    "key": "login:Administrador:2026-03-30 23:51",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "last_shown_at": "2026-03-30T23:51:44.239367",
+    "last_hash": "1abb62d039170986f7ae75387bb647aa",
+    "reminder_seconds": null,
+    "display_count": 1,
+    "history_saved": true
+  },
+  "login:Administrador:2026-03-30 23:56": {
+    "key": "login:Administrador:2026-03-30 23:56",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "last_shown_at": "2026-03-30T23:56:44.166877",
+    "last_hash": "1abb62d039170986f7ae75387bb647aa",
+    "reminder_seconds": null,
+    "display_count": 1,
+    "history_saved": true
+  },
+  "login:Administrador:2026-03-30 23:59": {
+    "key": "login:Administrador:2026-03-30 23:59",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "last_shown_at": "2026-03-30T23:59:11.743006",
+    "last_hash": "1abb62d039170986f7ae75387bb647aa",
+    "reminder_seconds": null,
+    "display_count": 1,
+    "history_saved": true
+  },
+  "login:Administrador:2026-03-31 00:01": {
+    "key": "login:Administrador:2026-03-31 00:01",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "last_shown_at": "2026-03-31T00:01:52.208882",
+    "last_hash": "1abb62d039170986f7ae75387bb647aa",
+    "reminder_seconds": null,
+    "display_count": 1,
+    "history_saved": true
+  },
+  "login:Administrador:2026-03-31 00:03": {
+    "key": "login:Administrador:2026-03-31 00:03",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "last_shown_at": "2026-03-31T00:03:33.550912",
+    "last_hash": "1abb62d039170986f7ae75387bb647aa",
+    "reminder_seconds": null,
+    "display_count": 1,
+    "history_saved": true
+  },
+  "login:Administrador:2026-03-31 00:05": {
+    "key": "login:Administrador:2026-03-31 00:05",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "last_shown_at": "2026-03-31T00:05:43.349915",
+    "last_hash": "1abb62d039170986f7ae75387bb647aa",
+    "reminder_seconds": null,
+    "display_count": 1,
+    "history_saved": true
+  },
+  "login:Administrador:2026-03-31 00:07": {
+    "key": "login:Administrador:2026-03-31 00:07",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "last_shown_at": "2026-03-31T00:07:34.253248",
+    "last_hash": "1abb62d039170986f7ae75387bb647aa",
+    "reminder_seconds": null,
+    "display_count": 1,
+    "history_saved": true
+  },
+  "login:Administrador:2026-03-31 00:09": {
+    "key": "login:Administrador:2026-03-31 00:09",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "last_shown_at": "2026-03-31T00:09:55.730593",
+    "last_hash": "1abb62d039170986f7ae75387bb647aa",
+    "reminder_seconds": null,
+    "display_count": 1,
+    "history_saved": true
+  },
+  "login:Administrador:2026-03-31 00:33": {
+    "key": "login:Administrador:2026-03-31 00:33",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "last_shown_at": "2026-03-31T00:33:10.639568",
+    "last_hash": "1abb62d039170986f7ae75387bb647aa",
+    "reminder_seconds": null,
+    "display_count": 1,
+    "history_saved": true
+  },
+  "login:Administrador:2026-03-31 00:42": {
+    "key": "login:Administrador:2026-03-31 00:42",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "last_shown_at": "2026-03-31T00:42:50.336560",
+    "last_hash": "1abb62d039170986f7ae75387bb647aa",
+    "reminder_seconds": null,
+    "display_count": 1,
+    "history_saved": true
+  },
+  "sale:V-20260331004342-696": {
+    "key": "sale:V-20260331004342-696",
+    "title": "Venta Completada",
+    "message": "Venta #V-20260331004342-696\nTotal: $650.00\nCliente: Ana Sofía García Hernández",
+    "type": "sale",
+    "last_shown_at": "2026-03-31T00:43:45.122380",
+    "last_hash": "944738b80d24e5fcc3e29320d862fdea",
+    "reminder_seconds": null,
+    "display_count": 1,
+    "history_saved": true
+  },
+  "login:Administrador:2026-03-31 01:05": {
+    "key": "login:Administrador:2026-03-31 01:05",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "last_shown_at": "2026-03-31T01:05:47.350526",
+    "last_hash": "1abb62d039170986f7ae75387bb647aa",
+    "reminder_seconds": null,
+    "display_count": 1,
+    "history_saved": true
+  },
+  "login:Administrador:2026-03-31 01:14": {
+    "key": "login:Administrador:2026-03-31 01:14",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "last_shown_at": "2026-03-31T01:14:46.720466",
+    "last_hash": "1abb62d039170986f7ae75387bb647aa",
+    "reminder_seconds": null,
+    "display_count": 1,
+    "history_saved": true
+  },
+  "login:Administrador:2026-03-31 01:16": {
+    "key": "login:Administrador:2026-03-31 01:16",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "last_shown_at": "2026-03-31T01:16:47.222641",
+    "last_hash": "1abb62d039170986f7ae75387bb647aa",
+    "reminder_seconds": null,
+    "display_count": 1,
+    "history_saved": true
+  },
+  "login:Administrador:2026-03-31 01:19": {
+    "key": "login:Administrador:2026-03-31 01:19",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "last_shown_at": "2026-03-31T01:19:06.748511",
+    "last_hash": "1abb62d039170986f7ae75387bb647aa",
+    "reminder_seconds": null,
+    "display_count": 1,
+    "history_saved": true
+  }
+}

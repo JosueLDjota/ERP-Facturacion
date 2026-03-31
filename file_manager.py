@@ -6,6 +6,8 @@ Gestor de importación y exportación de datos CSV.
 import csv
 import tkinter as tk
 from tkinter import Toplevel, filedialog, messagebox, ttk
+from erp.data.repositories.product_repository import ProductRepository, RepositoryError
+from erp.domain.entities.product import Product
 from frames.ui import format_hnl, normalize_hnl_amount, parse_hnl
 
 def center_window(window, width, height, parent=None):
@@ -28,6 +30,7 @@ class FileManager:
 
     def __init__(self, db_manager):
         self.db = db_manager
+        self.product_repository = ProductRepository(db_manager)
 
     def get_data_from_db(self, table_name):
         """Obtiene datos de la DB para exportar."""
@@ -191,23 +194,28 @@ class FileManager:
             )
 
         def confirm_import():
-            final_products = [tree.item(item, "tags") for item in tree.get_children()]
+            final_products = [
+                Product(
+                    id=None,
+                    nombre=str(tags[0]),
+                    descripcion=str(tags[1]),
+                    precio=float(tags[2]),
+                    stock=int(tags[3]),
+                    proveedor_id=int(tags[4]),
+                )
+                for tags in (tree.item(item, "tags") for item in tree.get_children())
+            ]
             if not final_products:
                 messagebox.showwarning("Importar", "No hay productos para importar.")
                 return
 
-            query = """
-                INSERT INTO Productos (nombre, descripcion, precio, stock, proveedor_id)
-                VALUES (?, ?, ?, ?, ?)
-            """
             try:
-                self.db.cursor.executemany(query, final_products)
-                self.db.conn.commit()
+                self.product_repository.import_many(final_products)
                 messagebox.showinfo("Éxito", f"{len(final_products)} productos importados.")
                 preview_window.destroy()
                 if hasattr(app_reference, "refresh_products"):
                     app_reference.refresh_products()
-            except Exception as exc:
+            except RepositoryError as exc:
                 messagebox.showerror("Error", f"Error al guardar: {exc}")
 
         btn_frame = ttk.Frame(preview_window)

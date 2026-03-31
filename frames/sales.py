@@ -9,13 +9,19 @@ import webbrowser
 import os
 from datetime import datetime
 from pathlib import Path
+import logging
 
 import tkinter as tk
 from tkinter import messagebox, ttk
 
 from erp.domain.services.invoice_calculator import calculate_invoice_totals
-from receipt_builder import build_receipt_html
+from erp.domain.use_cases.receipt_use_case import ReceiptStorageError, ReceiptStorageService
+from erp.domain.use_cases.sale_use_case import SaleProcessingError, SaleService
+from receipt_builder import build_receipt_html, load_receipt_labels
 from .ui import FONTS, PALETTE, center_window, format_hnl, normalize_hnl_amount, parse_hnl
+
+
+logger = logging.getLogger(__name__)
 
 
 class UnifiedPOSFrame(ttk.Frame):
@@ -25,6 +31,8 @@ class UnifiedPOSFrame(ttk.Frame):
         super().__init__(parent, padding="8")
         self.app = app
         self.db = app.db
+        self.receipt_storage = ReceiptStorageService(self.db)
+        self.sale_service = SaleService(self.db, self.receipt_storage)
 
         self.cart = {}
         self.product_index = {}
@@ -1180,53 +1188,19 @@ class UnifiedPOSFrame(ttk.Frame):
         sale = self.pending_sale
         cart_data = sale["cart_snapshot"]
         try:
-            self.db.execute(
-                """
-                INSERT INTO Ventas (
-                    id, fecha, total, monto_pagado, vuelto, metodo_pago, usuario_id, id_cliente, tipo_recibo
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    sale["venta_id"],
-                    sale["fecha"],
-                    sale["total"],
-                    sale["pagado"],
-                    sale["vuelto"],
-                    sale.get("metodo_pago", "NO_DEFINIDO"),
-                    self.app.current_user[0],
-                    sale["cliente_id"],
-                    f"POS-{sale['modo']}",
-                ),
+            result = self.sale_service.process_sale(
+                sale_id=sale["venta_id"],
+                fecha=sale["fecha"],
+                items=self._receipt_items(cart_data),
+                usuario_id=int(self.app.current_user[0]),
+                cliente_id=sale["cliente_id"],
+                metodo_pago=sale.get("metodo_pago", "NO_DEFINIDO"),
+                amount_received=sale["pagado"],
+                tipo_recibo=f"POS-{sale['modo']}",
+                receipt_mode=self.preview_mode_var.get(),
+                tax_included=sale.get("tax_included", self._invoice_prices_include_tax()),
+                number_to_words=self.number_to_words,
             )
-
-            for prod_id, item in cart_data.items():
-                qty = int(item["cantidad"])
-                price = float(item["precio_unitario"])
-                pct = float(item.get("descuento_porcentaje", 0))
-                discount_amount = (price * qty) * pct
-                subtotal = (price * qty) - discount_amount
-
-                self.db.execute(
-                    """
-                    INSERT INTO DetalleVenta (
-                        venta_id, producto_id, nombre_producto, cantidad, precio_unitario, descuento, subtotal
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (sale["venta_id"], prod_id, item["nombre"], qty, price, discount_amount, subtotal),
-                )
-                self.db.execute("UPDATE Productos SET stock = stock - ? WHERE id = ?", (qty, prod_id))
-
-            html_content = self.generate_receipt_html(
-                sale["venta_id"],
-                sale["total"],
-                sale["pagado"],
-                sale["vuelto"],
-                sale["fecha"],
-                cart_data,
-                sale["cliente_id"],
-                sale.get("metodo_pago"),
-            )
-            self.save_receipt(html_content, sale["venta_id"])
 
             self.clear_cart(silent=True)
             self.pending_sale = sale
@@ -1235,13 +1209,23 @@ class UnifiedPOSFrame(ttk.Frame):
             self.status_var.set("Venta procesada correctamente.")
             self._close_summary_window()
 
+            cliente_nombre = None
+            if result["cliente"]:
+                cliente_nombre = f"{result['cliente'].get('nombre', '')} {result['cliente'].get('apellido', '')}".strip()
+            self.app.notification_manager.notify_sale_success(
+                sale["venta_id"],
+                result["total"],
+                cliente_nombre or None,
+            )
+
             if messagebox.askyesno("Recibo", "Venta procesada. Desea abrir el recibo?"):
-                self.print_receipt(html_content)
+                self.print_receipt(result["html_content"])
             else:
                 messagebox.showinfo("Exito", "Venta confirmada y guardada en SQLite.")
 
-        except Exception as e:
-            messagebox.showerror("Error", f"No se pudo procesar la venta: {e}")
+        except SaleProcessingError as exc:
+            logger.exception("No se pudo procesar la venta '%s'.", sale["venta_id"])
+            messagebox.showerror("Error", f"No se pudo procesar la venta: {exc}")
 
     def _receipt_items(self, cart_data):
         items = []
@@ -1271,6 +1255,16 @@ class UnifiedPOSFrame(ttk.Frame):
             if rows:
                 cliente = {"nombre": rows[0][0], "apellido": rows[0][1], "dni": rows[0][2], "telefono": rows[0][3], "direccion": rows[0][4]}
 
+        empresa = {
+            "nombre": self.db.get_config("empresa_nombre", None),
+            "rtn": self.db.get_config("empresa_rtn", None),
+            "tel": self.db.get_config("empresa_tel", None),
+            "direccion": self.db.get_config("empresa_direccion", None),
+            "email": self.db.get_config("empresa_email", None),
+            "logo_url": self.db.get_config("empresa_logo_url", None),
+        }
+        empresa = {key: value for key, value in empresa.items() if value}
+
         return build_receipt_html(
             venta_id=venta_id,
             fecha=fecha,
@@ -1283,6 +1277,10 @@ class UnifiedPOSFrame(ttk.Frame):
             mode=self.preview_mode_var.get(),
             number_to_words=self.number_to_words,
             tax_included=(self.pending_sale or {}).get("tax_included", self._invoice_prices_include_tax()),
+            template_html=self.db.get_config("recibo_template", self.db.default_receipt_template()),
+            empresa=empresa,
+            observaciones=self.db.get_config("recibo_observaciones", ""),
+            labels=load_receipt_labels(self.db.get_config),
         )
 
     def format_receipt_ticket(self, venta_id, total, pagado, vuelto, fecha, cart_data=None, cliente_id=None, metodo_pago=None):
@@ -1380,49 +1378,20 @@ class UnifiedPOSFrame(ttk.Frame):
         return str(n)
 
     def _default_receipt_dir(self):
-        local_appdata = os.getenv("LOCALAPPDATA") or str(Path.home())
-        return Path(local_appdata) / "ERP-Facturacion" / "Recibos"
+        return self.receipt_storage.default_receipt_dir()
 
     def _candidate_receipt_dirs(self):
-        configured_path = (self.db.get_config("recibo_save_path", "") or "").strip()
-        candidates = []
-
-        if configured_path:
-            candidates.append(Path(configured_path).expanduser())
-
-        default_dir = self._default_receipt_dir()
-        if default_dir not in candidates:
-            candidates.append(default_dir)
-
-        return candidates
+        return self.receipt_storage.candidate_receipt_dirs()
 
     def _write_receipt_file(self, output_dir, venta_id, html_content):
-        output_dir.mkdir(parents=True, exist_ok=True)
-        file_path = output_dir / f"Recibo_{venta_id}.html"
-        with file_path.open("w", encoding="utf-8") as handle:
-            handle.write(html_content)
-        return file_path
+        return self.receipt_storage.write_receipt_file(output_dir, venta_id, html_content)
 
     def save_receipt(self, html_content, venta_id):
-        configured_path = (self.db.get_config("recibo_save_path", "") or "").strip()
-        last_error = None
-
-        for output_dir in self._candidate_receipt_dirs():
-            try:
-                file_path = self._write_receipt_file(output_dir, venta_id, html_content)
-            except OSError as exc:
-                last_error = exc
-                continue
-
-            if str(output_dir) != configured_path:
-                self.db.set_config("recibo_save_path", str(output_dir))
-
-            self.last_receipt_path = str(file_path)
-            return str(file_path)
-
-        raise PermissionError(
-            "No se pudo guardar el recibo en la ruta configurada ni en la ruta local predeterminada."
-        ) from last_error
+        try:
+            self.last_receipt_path = self.receipt_storage.save_receipt(html_content, venta_id)
+            return self.last_receipt_path
+        except ReceiptStorageError as exc:
+            raise PermissionError(str(exc)) from exc
 
     def print_receipt(self, html_content):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False, encoding="utf-8") as handle:

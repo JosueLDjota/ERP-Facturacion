@@ -13,7 +13,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from tkcalendar import DateEntry
 
-from receipt_builder import build_receipt_html
+from receipt_builder import build_receipt_html, load_receipt_labels
 from .ui import create_modal, format_hnl
 
 
@@ -544,6 +544,21 @@ class RegistroVentasFrame(ttk.Frame):
             metodo_pago=sale.get("metodo_pago", "NO_DEFINIDO"),
             mode="ticket",
             tax_included=self._invoice_prices_include_tax(),
+            template_html=self.app.db.get_config("recibo_template", self.app.db.default_receipt_template()),
+            empresa={
+                key: value
+                for key, value in {
+                    "nombre": self.app.db.get_config("empresa_nombre", None),
+                    "rtn": self.app.db.get_config("empresa_rtn", None),
+                    "tel": self.app.db.get_config("empresa_tel", None),
+                    "direccion": self.app.db.get_config("empresa_direccion", None),
+                    "email": self.app.db.get_config("empresa_email", None),
+                    "logo_url": self.app.db.get_config("empresa_logo_url", None),
+                }.items()
+                if value
+            },
+            observaciones=self.app.db.get_config("recibo_observaciones", ""),
+            labels=load_receipt_labels(self.app.db.get_config),
         )
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False, encoding="utf-8") as temp_file:

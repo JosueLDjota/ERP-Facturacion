@@ -1,9 +1,25 @@
 """
 database.py - Gestor de Base de Datos SQLite
-Maneja todas las operaciones CRUD y estructura de la base de datos
+Maneja todas las operaciones CRUD y estructura de la base de datos.
 """
 
+from __future__ import annotations
+
+from contextlib import contextmanager
+from datetime import datetime
+import logging
+from pathlib import Path
 import sqlite3
+from typing import Iterator
+
+from erp.domain.services.security import generate_temporary_password, hash_password
+
+
+logger = logging.getLogger(__name__)
+
+
+class DatabaseError(RuntimeError):
+    """Error operativo o transaccional de SQLite."""
 
 
 class DBManager:
@@ -18,11 +34,74 @@ class DBManager:
     )
 
     def __init__(self, db_name="erp_profesional.db"):
-        self.conn = sqlite3.connect(db_name)
-        self.cursor = self.conn.cursor()
+        self.db_path = self._resolve_db_path(db_name)
+        self._transaction_depth = 0
+        self.bootstrap_admin_password = None
         self.last_error = None
+
+        self.conn = sqlite3.connect(
+            self.db_path,
+            timeout=30,
+            uri=str(self.db_path).startswith("file:"),
+        )
+        self.cursor = self.conn.cursor()
         self.conn.execute("PRAGMA foreign_keys = ON")
+        self.conn.execute("PRAGMA journal_mode = WAL")
         self.create_tables()
+
+    def _resolve_db_path(self, db_name) -> str:
+        raw_path = str(db_name or "erp_profesional.db")
+        if raw_path == ":memory:" or raw_path.startswith("file:"):
+            return raw_path
+
+        path = Path(raw_path).expanduser()
+        if not path.is_absolute():
+            path = Path.cwd() / path
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return str(path)
+
+    @contextmanager
+    def transaction(self) -> Iterator[sqlite3.Cursor]:
+        """Abre una transacción reutilizable con savepoints para anidación segura."""
+        cursor = self.conn.cursor()
+        savepoint_name = None
+        try:
+            self.last_error = None
+            if self._transaction_depth == 0:
+                cursor.execute("BEGIN IMMEDIATE")
+            else:
+                savepoint_name = f"sp_{self._transaction_depth}"
+                cursor.execute(f"SAVEPOINT {savepoint_name}")
+
+            self._transaction_depth += 1
+            yield cursor
+
+            self._transaction_depth -= 1
+            if savepoint_name:
+                cursor.execute(f"RELEASE SAVEPOINT {savepoint_name}")
+            elif self._transaction_depth == 0:
+                self.conn.commit()
+        except sqlite3.Error as exc:
+            self.last_error = exc
+            logger.exception("Error de base de datos durante transacción.")
+            if savepoint_name:
+                cursor.execute(f"ROLLBACK TO SAVEPOINT {savepoint_name}")
+                cursor.execute(f"RELEASE SAVEPOINT {savepoint_name}")
+                self._transaction_depth = max(0, self._transaction_depth - 1)
+            else:
+                self._transaction_depth = 0
+                self.conn.rollback()
+            raise DatabaseError(str(exc)) from exc
+        except Exception:
+            if savepoint_name:
+                cursor.execute(f"ROLLBACK TO SAVEPOINT {savepoint_name}")
+                cursor.execute(f"RELEASE SAVEPOINT {savepoint_name}")
+                self._transaction_depth = max(0, self._transaction_depth - 1)
+            else:
+                self._transaction_depth = 0
+                self.conn.rollback()
+            raise
 
     def create_tables(self):
         """Crea todas las tablas necesarias del sistema."""
@@ -59,10 +138,16 @@ class DBManager:
                 descripcion TEXT,
                 precio REAL NOT NULL,
                 stock INTEGER NOT NULL,
+                stock_minimo INTEGER NOT NULL DEFAULT 5,
                 proveedor_id INTEGER,
                 FOREIGN KEY (proveedor_id) REFERENCES Proveedores(id)
             )
         """
+        )
+        self._ensure_column(
+            "Productos",
+            "stock_minimo",
+            "INTEGER NOT NULL DEFAULT 5",
         )
 
         # Tabla de Proveedores
@@ -89,6 +174,7 @@ class DBManager:
             )
         """
         )
+        self._ensure_column("Usuarios", "password_updated_at", "TEXT")
 
         # Tabla de Descuentos
         self.cursor.execute(
@@ -245,11 +331,26 @@ class DBManager:
     def insert_initial_data(self):
         """Inserta datos iniciales si las tablas están vacías."""
 
-        # Usuario administrador por defecto
+        # Usuario administrador inicial seguro
         if not self.fetch("SELECT * FROM Usuarios"):
+            temporary_password = generate_temporary_password()
+            self.bootstrap_admin_password = temporary_password
             self.execute(
-                "INSERT INTO Usuarios (nombre, usuario, contrasena, rol) VALUES (?, ?, ?, ?)",
-                ("Administrador", "admin", "1234", "Administrador"),
+                """
+                INSERT INTO Usuarios (nombre, usuario, contrasena, rol, password_updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    "Administrador",
+                    "admin",
+                    hash_password(temporary_password),
+                    "Administrador",
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                ),
+            )
+            logger.warning(
+                "Se creó un usuario administrador inicial. Usuario: admin | Contraseña temporal: %s",
+                temporary_password,
             )
 
         # Proveedor de ejemplo
@@ -292,8 +393,6 @@ class DBManager:
 
         # Clientes de ejemplo
         if not self.fetch("SELECT * FROM Clientes"):
-            from datetime import datetime
-
             fecha_actual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
             clientes_ejemplo = [
@@ -306,6 +405,7 @@ class DBManager:
                     "Colonia Palmira, Tegucigalpa",
                     fecha_actual,
                     1,
+                    0,
                 ),
                 (
                     "María Elena",
@@ -316,6 +416,7 @@ class DBManager:
                     "Barrio La Granja, San Pedro Sula",
                     fecha_actual,
                     1,
+                    0,
                 ),
                 (
                     "José Antonio",
@@ -326,6 +427,7 @@ class DBManager:
                     "Centro, Comayagua",
                     fecha_actual,
                     1,
+                    0,
                 ),
                 (
                     "Ana Sofía",
@@ -336,60 +438,24 @@ class DBManager:
                     "Colonia Kennedy, La Ceiba",
                     fecha_actual,
                     1,
+                    0,
                 ),
             ]
             self.cursor.executemany(
-                "INSERT INTO Clientes (nombre, apellido, dni, telefono, email, direccion, fecha_registro, activo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                """
+                INSERT INTO Clientes (
+                    nombre, apellido, dni, telefono, email, direccion, fecha_registro, activo, mayorista
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
                 clientes_ejemplo,
             )
             self.conn.commit()
 
     def default_receipt_template(self):
         """Plantilla HTML por defecto para recibos."""
-        return """<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <style>
-        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; font-size: 10pt; }
-        .recibo { width: 300px; margin: 0 auto; border: 1px dashed #333; padding: 15px; }
-        h1 { font-size: 16pt; text-align: center; margin: 0 0 10px 0; }
-        .info { text-align: center; margin-bottom: 15px; font-size: 9pt; }
-        .detail { margin-top: 15px; border-top: 1px dashed #ccc; padding-top: 10px; }
-        .item { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 9pt; }
-        .total-section { margin-top: 15px; border-top: 2px solid #333; padding-top: 10px; }
-        .total { font-weight: bold; font-size: 12pt; }
-        .footer { margin-top: 15px; border-top: 1px dashed #ccc; padding-top: 10px; text-align: center; font-size: 8pt; }
-    </style>
-</head>
-<body>
-    <div class="recibo">
-        <h1>{{NOMBRE_NEGOCIO}}</h1>
-        <div class="info">
-            <p><strong>Venta ID:</strong> {{ID_VENTA}}</p>
-            <p><strong>Fecha:</strong> {{FECHA}}</p>
-        </div>
-        
-        <div class="detail">
-            <div style="font-weight: bold; border-bottom: 1px solid #ccc; padding-bottom: 5px; margin-bottom: 5px;" class="item">
-                <span>Producto</span><span>Cant. / Subtotal</span>
-            </div>
-            <!-- ITEMS_PLACEHOLDER -->
-        </div>
+        from receipt_builder import default_receipt_template
 
-        <div class="total-section">
-            <div class="item total"><span>TOTAL A PAGAR:</span><span>L {{TOTAL}}</span></div>
-            <div class="item"><span>MONTO RECIBIDO:</span><span>L {{MONTO_PAGADO}}</span></div>
-            <div class="item"><span>VUELTO:</span><span>L {{VUELTO}}</span></div>
-        </div>
-
-        <div class="footer">
-            <p>¡Gracias por su compra!</p>
-            <p>Vuelva pronto</p>
-        </div>
-    </div>
-</body>
-</html>"""
+        return default_receipt_template()
 
     def get_config(self, clave, default=None):
         """Obtiene un valor de configuración."""
@@ -398,7 +464,7 @@ class DBManager:
 
     def set_config(self, clave, valor):
         """Establece o actualiza un valor de configuración."""
-        self.execute(
+        self.execute_checked(
             "INSERT OR REPLACE INTO Configuracion (clave, valor) VALUES (?, ?)",
             (clave, valor),
         )
@@ -412,15 +478,13 @@ class DBManager:
         if producto_id in ("", None):
             producto_id = None
 
-        self.cursor.execute(
+        return self.execute_checked(
             """
             INSERT INTO ventas_diarias (monto_total, metodo_pago, referencia, producto_id)
             VALUES (?, ?, ?, ?)
             """,
             (monto_total, metodo_pago, referencia.strip(), producto_id),
         )
-        self.conn.commit()
-        return self.cursor.lastrowid
 
     def fetch_ventas_diarias(
         self, fecha_desde=None, fecha_hasta=None, transaccion_id=None
@@ -721,22 +785,39 @@ class DBManager:
         """Ejecuta una consulta SELECT y retorna los resultados."""
         try:
             self.last_error = None
-            self.cursor.execute(query, params)
-            return self.cursor.fetchall()
+            cursor = self.conn.cursor()
+            cursor.execute(query, params)
+            return cursor.fetchall()
         except sqlite3.Error as e:
             self.last_error = e
+            logger.exception("Error ejecutando consulta SELECT.")
             return []
 
     def execute(self, query, params=()):
         """Ejecuta una consulta INSERT/UPDATE/DELETE."""
         try:
             self.last_error = None
-            self.cursor.execute(query, params)
-            self.conn.commit()
-            return self.cursor.lastrowid
+            cursor = self.conn.cursor()
+            cursor.execute(query, params)
+            if self._transaction_depth == 0:
+                self.conn.commit()
+            return cursor.lastrowid
         except sqlite3.Error as e:
             self.last_error = e
+            if self._transaction_depth == 0:
+                self.conn.rollback()
+            logger.exception("Error ejecutando sentencia SQL.")
             return None
+
+    def fetch_one(self, query, params=()):
+        rows = self.fetch(query, params)
+        return rows[0] if rows else None
+
+    def execute_checked(self, query, params=()):
+        result = self.execute(query, params)
+        if self.last_error is not None:
+            raise DatabaseError(str(self.last_error))
+        return result
 
     def close(self):
         """Cierra la conexión a la base de datos."""

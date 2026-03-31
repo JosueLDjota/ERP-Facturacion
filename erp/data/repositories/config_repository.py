@@ -22,34 +22,28 @@ class ConfigRepository:
 
     def save_discount(self, discount_id: str | None, nombre: str, tipo: str, porcentaje: float) -> int:
         if discount_id:
-            self.db.execute(
+            self.db.execute_checked(
                 "UPDATE Descuentos SET nombre=?, tipo=?, porcentaje=? WHERE id=?",
                 (nombre, tipo, porcentaje, int(discount_id)),
             )
-            if self.db.last_error:
-                raise RepositoryError(str(self.db.last_error))
             return int(discount_id)
 
-        new_id = self.db.execute(
+        new_id = self.db.execute_checked(
             "INSERT INTO Descuentos (nombre, tipo, porcentaje) VALUES (?, ?, ?)",
             (nombre, tipo, porcentaje),
         )
-        if self.db.last_error or new_id is None:
-            raise RepositoryError(str(self.db.last_error or "No se pudo crear descuento."))
+        if new_id is None:
+            raise RepositoryError("No se pudo crear descuento.")
         return int(new_id)
 
     def delete_discount(self, discount_id: int) -> None:
-        self.db.execute("DELETE FROM Descuentos WHERE id=?", (discount_id,))
-        if self.db.last_error:
-            raise RepositoryError(str(self.db.last_error))
+        self.db.execute_checked("DELETE FROM Descuentos WHERE id=?", (discount_id,))
 
     def get_receipt_template(self) -> str:
         return self.db.get_config("recibo_template", self.db.default_receipt_template())
 
     def set_receipt_template(self, template: str) -> None:
         self.db.set_config("recibo_template", template)
-        if self.db.last_error:
-            raise RepositoryError(str(self.db.last_error))
 
     def default_receipt_template(self) -> str:
         return self.db.default_receipt_template()

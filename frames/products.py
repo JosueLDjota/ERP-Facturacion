@@ -6,6 +6,8 @@ Gestion de productos con CRUD e importacion/exportacion.
 import tkinter as tk
 from tkinter import messagebox, ttk
 
+from erp.data.repositories.product_repository import ProductRepository, RepositoryError
+from erp.domain.entities.product import Product
 from .ui import create_modal, format_hnl, normalize_hnl_amount, parse_hnl
 
 
@@ -16,6 +18,7 @@ class ProductFrame(ttk.Frame):
         super().__init__(parent, padding=10)
         self.app = app
         self.db = app.db
+        self.repository = ProductRepository(self.db)
 
         self.product_id = tk.StringVar(value="")
         self.nombre = tk.StringVar()
@@ -157,7 +160,11 @@ class ProductFrame(ttk.Frame):
     def _render_products(self, products):
         self.tree.delete(*self.tree.get_children())
         for prod in products:
-            prod_id, nombre, precio, stock, proveedor_id = prod
+            prod_id = prod.id
+            nombre = prod.nombre
+            precio = prod.precio
+            stock = prod.stock
+            proveedor_id = prod.proveedor_id
             self.tree.insert(
                 "",
                 "end",
@@ -165,7 +172,7 @@ class ProductFrame(ttk.Frame):
             )
 
     def load_products(self):
-        products = self.db.fetch("SELECT id, nombre, precio, stock, proveedor_id FROM Productos ORDER BY id DESC")
+        products = self.repository.list_all()
         self._render_products(products)
 
     def filter_products(self, _event=None):
@@ -174,9 +181,7 @@ class ProductFrame(ttk.Frame):
             self.load_products()
             return
 
-        products = self.db.fetch("SELECT id, nombre, precio, stock, proveedor_id FROM Productos")
-        filtered = [prod for prod in products if search_term in str(prod[1]).lower()]
-        self._render_products(filtered)
+        self._render_products(self.repository.search_by_name(search_term))
 
     def select_product(self, _event):
         selected_item = self.tree.focus()
@@ -237,25 +242,25 @@ class ProductFrame(ttk.Frame):
             self._show_error("Error", "El stock no puede ser negativo.")
             return
 
-        if self.product_id.get():
-            self.db.execute(
-                """
-                    UPDATE Productos
-                    SET nombre=?, precio=?, stock=?, descripcion=?, proveedor_id=?
-                    WHERE id=?
-                """,
-                (nombre, precio_val, stock_val, descripcion, prov_id_val, self.product_id.get()),
+        try:
+            self.repository.save(
+                Product(
+                    id=int(self.product_id.get()) if self.product_id.get() else None,
+                    nombre=nombre,
+                    descripcion=descripcion,
+                    precio=precio_val,
+                    stock=stock_val,
+                    proveedor_id=prov_id_val,
+                )
             )
-            self._show_info("Exito", "Producto actualizado correctamente.")
-        else:
-            self.db.execute(
-                """
-                    INSERT INTO Productos (nombre, precio, stock, descripcion, proveedor_id)
-                    VALUES (?, ?, ?, ?, ?)
-                """,
-                (nombre, precio_val, stock_val, descripcion, prov_id_val),
-            )
-            self._show_info("Exito", "Producto agregado correctamente.")
+        except RepositoryError as exc:
+            self._show_error("Error", f"No se pudo guardar el producto.\n\n{exc}")
+            return
+
+        self._show_info(
+            "Exito",
+            "Producto actualizado correctamente." if self.product_id.get() else "Producto agregado correctamente.",
+        )
 
         self.load_products()
         self.reset_form()
@@ -313,15 +318,28 @@ class ProductFrame(ttk.Frame):
                 self._show_error("Error", "El redondeo debe ser mayor que 0.")
                 return
 
-            products = self.db.fetch("SELECT id, precio FROM Productos")
-            updated = 0
-            for prod_id, old_price in products:
-                base_price = normalize_hnl_amount(old_price)
-                adjusted_price = base_price * (1 + (pct / 100.0))
-                adjusted_price = round(adjusted_price / step) * step
-                adjusted_price = max(0.01, normalize_hnl_amount(adjusted_price))
-                self.db.execute("UPDATE Productos SET precio = ? WHERE id = ?", (adjusted_price, prod_id))
-                updated += 1
+            try:
+                products = self.repository.list_all()
+                updated = 0
+                for product in products:
+                    base_price = normalize_hnl_amount(product.precio)
+                    adjusted_price = base_price * (1 + (pct / 100.0))
+                    adjusted_price = round(adjusted_price / step) * step
+                    adjusted_price = max(0.01, normalize_hnl_amount(adjusted_price))
+                    self.repository.save(
+                        Product(
+                            id=product.id,
+                            nombre=product.nombre,
+                            descripcion=product.descripcion,
+                            precio=adjusted_price,
+                            stock=product.stock,
+                            proveedor_id=product.proveedor_id,
+                        )
+                    )
+                    updated += 1
+            except RepositoryError as exc:
+                self._show_error("Error", f"No se pudieron ajustar los precios.\n\n{exc}")
+                return
 
             popup.destroy()
             self.load_products()
@@ -343,7 +361,11 @@ class ProductFrame(ttk.Frame):
 
         prod_id = self.tree.item(selected_item, "values")[0]
         if self._ask_yes_no("Confirmar", f"Eliminar el producto ID {prod_id}?"):
-            self.db.execute("DELETE FROM Productos WHERE id = ?", (prod_id,))
+            try:
+                self.repository.delete(int(prod_id))
+            except RepositoryError as exc:
+                self._show_error("Error", f"No se pudo eliminar el producto.\n\n{exc}")
+                return
             self._show_info("Exito", "Producto eliminado.")
             self.load_products()
             self.reset_form()

@@ -6,6 +6,8 @@ Gestión de proveedores con CRUD.
 import tkinter as tk
 from tkinter import messagebox, ttk
 
+from erp.data.repositories.supplier_repository import RepositoryError, SupplierRepository
+
 
 class SupplierFrame(ttk.Frame):
     """Frame para gestión de proveedores."""
@@ -14,6 +16,7 @@ class SupplierFrame(ttk.Frame):
         super().__init__(parent, padding=10)
         self.app = app
         self.db = app.db
+        self.repository = SupplierRepository(self.db)
 
         self.sup_id = tk.StringVar(value="")
         self.nombre = tk.StringVar()
@@ -124,7 +127,7 @@ class SupplierFrame(ttk.Frame):
 
     def load_suppliers(self):
         self.tree.delete(*self.tree.get_children())
-        suppliers = self.db.fetch("SELECT id, nombre, contacto, telefono FROM Proveedores ORDER BY id DESC")
+        suppliers = self.repository.list_all()
         for sup in suppliers:
             self.tree.insert("", "end", values=sup)
 
@@ -153,18 +156,13 @@ class SupplierFrame(ttk.Frame):
             self._show_error("Error", "El nombre es obligatorio.")
             return
 
-        if self.sup_id.get():
-            self.db.execute(
-                "UPDATE Proveedores SET nombre=?, contacto=?, telefono=? WHERE id=?",
-                (nombre, contacto, telefono, self.sup_id.get()),
-            )
-            self._show_info("Éxito", "Proveedor actualizado.")
-        else:
-            self.db.execute(
-                "INSERT INTO Proveedores (nombre, contacto, telefono) VALUES (?, ?, ?)",
-                (nombre, contacto, telefono),
-            )
-            self._show_info("Éxito", "Proveedor agregado.")
+        try:
+            self.repository.save(self.sup_id.get() or None, nombre, contacto, telefono)
+        except RepositoryError as exc:
+            self._show_error("Error", f"No se pudo guardar el proveedor.\n\n{exc}")
+            return
+
+        self._show_info("Éxito", "Proveedor actualizado." if self.sup_id.get() else "Proveedor agregado.")
 
         self.load_suppliers()
         self.reset_form()
@@ -177,7 +175,11 @@ class SupplierFrame(ttk.Frame):
 
         sup_id = self.tree.item(selected_item, "values")[0]
         if self._ask_yes_no("Confirmar", f"¿Eliminar el proveedor ID {sup_id}?"):
-            self.db.execute("DELETE FROM Proveedores WHERE id = ?", (sup_id,))
+            try:
+                self.repository.delete(int(sup_id))
+            except RepositoryError as exc:
+                self._show_error("Error", f"No se pudo eliminar el proveedor.\n\n{exc}")
+                return
             self._show_info("Éxito", "Proveedor eliminado.")
             self.load_suppliers()
             self.reset_form()
