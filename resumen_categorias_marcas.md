@@ -5,14 +5,17 @@ Fecha de consolidacion: 2026-04-01 01:14:36
 Modo aplicado: seguro, sin sobrescribir asignaciones validas; solo NULL y fallbacks (`Generica` / `Otros`)
 
 ## Tablas creadas
+
 - Categorias
 - Marcas
 
 ## Columnas agregadas
+
 - Productos.categoria_id
 - Productos.marca_id
 
 ## Marcas insertadas
+
 - Total final en tabla: 22
 - Acer
 - Asus
@@ -38,6 +41,7 @@ Modo aplicado: seguro, sin sobrescribir asignaciones validas; solo NULL y fallba
 - Generica
 
 ## Categorias insertadas
+
 - Total final en tabla: 26
 - Laptops
 - Monitores
@@ -67,6 +71,7 @@ Modo aplicado: seguro, sin sobrescribir asignaciones validas; solo NULL y fallba
 - Otros
 
 ## Productos actualizados
+
 - Corrida inicial con marca asignada: 299
 - Corrida inicial con categoria asignada: 299
 - Ajuste posterior de heuristicas: 29 productos reclasificados para salir de `Otros`
@@ -74,13 +79,16 @@ Modo aplicado: seguro, sin sobrescribir asignaciones validas; solo NULL y fallba
 - Total de asignaciones/reasignaciones de categoria ejecutadas: 328
 
 ## Estado final
+
 - Productos con marca asignada: 299
 - Productos con categoria asignada: 299
 - Productos clasificados como `Generica`: 1
 - Productos clasificados como `Otros`: 0
 
 ## Productos clasificados como Generica
+
 - [305] SmartFit3
 
 ## Productos clasificados como Otros
+
 - Ninguno

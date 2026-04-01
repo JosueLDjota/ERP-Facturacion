@@ -8,6 +8,8 @@ import re
 import tkinter as tk
 from tkinter import messagebox, ttk
 
+from .taxonomy import CatalogTaxonomyFrame
+
 
 class ConfigFrame(ttk.Frame):
     """Frame de configuracion del sistema."""
@@ -36,7 +38,9 @@ class ConfigFrame(ttk.Frame):
 
         disc_tab = ttk.Frame(self.notebook, padding=12, style="App.TFrame")
         receipt_tab = ttk.Frame(self.notebook, padding=12, style="App.TFrame")
+        taxonomy_tab = CatalogTaxonomyFrame(self.notebook, self.app)
         self.notebook.add(disc_tab, text="Descuentos")
+        self.notebook.add(taxonomy_tab, text="Categorias y Marcas")
         self.notebook.add(receipt_tab, text="Plantilla de recibo")
 
         self.create_discount_tab(disc_tab)
