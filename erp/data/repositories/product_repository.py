@@ -20,6 +20,10 @@ class RepositoryError(RuntimeError):
 class ProductRepository:
     db: DBManager
 
+    @staticmethod
+    def _optional_int(value) -> int | None:
+        return int(value) if value is not None else None
+
     def _row_to_product(self, row) -> Product:
         return Product(
             id=int(row[0]),
@@ -29,12 +33,23 @@ class ProductRepository:
             stock=int(row[4] or 0),
             proveedor_id=int(row[5] or 0),
             codigo_producto=str(row[6] or "") or None,
+            categoria_id=self._optional_int(row[7]),
+            marca_id=self._optional_int(row[8]),
         )
 
     def list_all(self) -> list[Product]:
         rows = self.db.fetch(
             """
-            SELECT id, nombre, descripcion, precio, stock, proveedor_id, COALESCE(codigo_producto, '')
+            SELECT
+                id,
+                nombre,
+                descripcion,
+                precio,
+                stock,
+                proveedor_id,
+                COALESCE(codigo_producto, ''),
+                categoria_id,
+                marca_id
             FROM Productos
             ORDER BY id DESC
             """
@@ -45,7 +60,16 @@ class ProductRepository:
         token = f"%{(term or '').strip().lower()}%"
         rows = self.db.fetch(
             """
-            SELECT id, nombre, descripcion, precio, stock, proveedor_id, COALESCE(codigo_producto, '')
+            SELECT
+                id,
+                nombre,
+                descripcion,
+                precio,
+                stock,
+                proveedor_id,
+                COALESCE(codigo_producto, ''),
+                categoria_id,
+                marca_id
             FROM Productos
             WHERE LOWER(nombre) LIKE ?
                OR LOWER(COALESCE(codigo_producto, '')) LIKE ?
@@ -64,14 +88,23 @@ class ProductRepository:
                 p.precio,
                 p.stock,
                 COALESCE(pr.nombre, 'Sin proveedor') AS proveedor_nombre,
-                COALESCE(p.codigo_producto, '') AS codigo_producto
+                COALESCE(p.codigo_producto, '') AS codigo_producto,
+                COALESCE(c.nombre, 'Sin categoria') AS categoria_nombre,
+                COALESCE(m.nombre, 'Sin marca') AS marca_nombre
             FROM Productos p
             LEFT JOIN Proveedores pr ON pr.id = p.proveedor_id
+            LEFT JOIN Categorias c ON c.id = p.categoria_id
+            LEFT JOIN Marcas m ON m.id = p.marca_id
         """
         params = ()
         if token:
-            query += " WHERE LOWER(p.nombre) LIKE ? OR LOWER(COALESCE(p.codigo_producto, '')) LIKE ?"
-            params = (f"%{token}%", f"%{token}%")
+            query += """
+                WHERE LOWER(p.nombre) LIKE ?
+                   OR LOWER(COALESCE(p.codigo_producto, '')) LIKE ?
+                   OR LOWER(COALESCE(c.nombre, '')) LIKE ?
+                   OR LOWER(COALESCE(m.nombre, '')) LIKE ?
+            """
+            params = (f"%{token}%", f"%{token}%", f"%{token}%", f"%{token}%")
         query += " ORDER BY p.id DESC"
         rows = self.db.fetch(query, params)
         return [
@@ -82,6 +115,8 @@ class ProductRepository:
                 "stock": int(row[3] or 0),
                 "proveedor_nombre": str(row[4] or "Sin proveedor"),
                 "codigo_producto": str(row[5] or ""),
+                "categoria_nombre": str(row[6] or "Sin categoria"),
+                "marca_nombre": str(row[7] or "Sin marca"),
             }
             for row in rows
         ]
@@ -89,7 +124,16 @@ class ProductRepository:
     def get_detail(self, product_id: int) -> dict | None:
         rows = self.db.fetch(
             """
-            SELECT id, nombre, precio, stock, descripcion, proveedor_id, COALESCE(codigo_producto, '')
+            SELECT
+                id,
+                nombre,
+                precio,
+                stock,
+                descripcion,
+                proveedor_id,
+                COALESCE(codigo_producto, ''),
+                categoria_id,
+                marca_id
             FROM Productos
             WHERE id = ?
             LIMIT 1
@@ -107,6 +151,8 @@ class ProductRepository:
             "descripcion": str(row[4] or ""),
             "proveedor_id": int(row[5] or 0),
             "codigo_producto": str(row[6] or ""),
+            "categoria_id": self._optional_int(row[7]),
+            "marca_id": self._optional_int(row[8]),
         }
 
     def export_rows(self) -> list[tuple]:
@@ -135,7 +181,7 @@ class ProductRepository:
             self.db.execute(
                 """
                 UPDATE Productos
-                SET nombre=?, descripcion=?, precio=?, stock=?, proveedor_id=?, codigo_producto=?
+                SET nombre=?, descripcion=?, precio=?, stock=?, proveedor_id=?, codigo_producto=?, categoria_id=?, marca_id=?
                 WHERE id=?
                 """,
                 (
@@ -145,6 +191,8 @@ class ProductRepository:
                     product.stock,
                     product.proveedor_id,
                     product.codigo_producto,
+                    product.categoria_id,
+                    product.marca_id,
                     product.id,
                 ),
             )
@@ -154,8 +202,17 @@ class ProductRepository:
 
         new_id = self.db.execute(
             """
-            INSERT INTO Productos (nombre, descripcion, precio, stock, proveedor_id, codigo_producto)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO Productos (
+                nombre,
+                descripcion,
+                precio,
+                stock,
+                proveedor_id,
+                codigo_producto,
+                categoria_id,
+                marca_id
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 product.nombre,
@@ -164,6 +221,8 @@ class ProductRepository:
                 product.stock,
                 product.proveedor_id,
                 product.codigo_producto,
+                product.categoria_id,
+                product.marca_id,
             ),
         )
         if self.db.last_error or new_id is None:
@@ -182,8 +241,17 @@ class ProductRepository:
                 for product in products:
                     cursor.execute(
                         """
-                        INSERT INTO Productos (nombre, descripcion, precio, stock, proveedor_id, codigo_producto)
-                        VALUES (?, ?, ?, ?, ?, ?)
+                        INSERT INTO Productos (
+                            nombre,
+                            descripcion,
+                            precio,
+                            stock,
+                            proveedor_id,
+                            codigo_producto,
+                            categoria_id,
+                            marca_id
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             product.nombre,
@@ -192,6 +260,8 @@ class ProductRepository:
                             product.stock,
                             product.proveedor_id,
                             product.codigo_producto,
+                            product.categoria_id,
+                            product.marca_id,
                         ),
                     )
                     count += 1

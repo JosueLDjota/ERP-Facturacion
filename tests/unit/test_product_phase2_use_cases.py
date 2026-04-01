@@ -4,6 +4,7 @@ from pathlib import Path
 
 from database import DBManager
 from erp.data.repositories.product_repository import ProductRepository
+from erp.data.repositories.product_taxonomy_repository import ProductTaxonomyRepository
 from erp.data.repositories.supplier_repository import SupplierRepository
 from erp.domain.services.price_adjustment_service import PriceAdjustmentService
 from erp.domain.services.product_import_service import ProductImportService
@@ -21,6 +22,7 @@ class ProductPhase2UseCasesTests(unittest.TestCase):
         self.db = DBManager(str(self.db_path))
         self.products = ProductRepository(self.db)
         self.suppliers = SupplierRepository(self.db)
+        self.taxonomy = ProductTaxonomyRepository(self.db)
         self.validator = ProductValidationService()
         self.import_service = ProductImportService(self.validator)
 
@@ -29,21 +31,27 @@ class ProductPhase2UseCasesTests(unittest.TestCase):
         self._temp_dir.cleanup()
 
     def test_save_product_creates_with_codigo_producto(self):
-        result = SaveProduct(self.products, self.suppliers, self.validator).execute(
+        category_id = self.db.fetch("SELECT id FROM Categorias WHERE nombre = 'Accesorios' LIMIT 1")[0][0]
+        brand_id = self.db.fetch("SELECT id FROM Marcas WHERE nombre = 'Logitech' LIMIT 1")[0][0]
+        result = SaveProduct(self.products, self.suppliers, self.validator, self.taxonomy).execute(
             nombre="Producto Fase 2",
             descripcion="Prueba",
             precio="L 150.50",
             stock="8",
             proveedor_id="1",
             codigo_producto="7501234567890",
+            categoria_id=str(category_id),
+            marca_id=str(brand_id),
         )
 
         stored = self.products.get_detail(result.product_id)
         self.assertTrue(result.created)
         self.assertEqual(stored["codigo_producto"], "7501234567890")
+        self.assertEqual(stored["categoria_id"], category_id)
+        self.assertEqual(stored["marca_id"], brand_id)
 
     def test_save_product_rejects_duplicate_codigo_producto(self):
-        saver = SaveProduct(self.products, self.suppliers, self.validator)
+        saver = SaveProduct(self.products, self.suppliers, self.validator, self.taxonomy)
         saver.execute(
             nombre="Producto A",
             descripcion="",
@@ -64,7 +72,7 @@ class ProductPhase2UseCasesTests(unittest.TestCase):
             )
 
     def test_list_products_searches_by_codigo_producto(self):
-        saver = SaveProduct(self.products, self.suppliers, self.validator)
+        saver = SaveProduct(self.products, self.suppliers, self.validator, self.taxonomy)
         saver.execute(
             nombre="Escaner Test",
             descripcion="",
@@ -76,6 +84,27 @@ class ProductPhase2UseCasesTests(unittest.TestCase):
 
         matches = ListProducts(self.products).execute("1112223")
         self.assertTrue(any(item["codigo_producto"] == "7890001112223" for item in matches))
+
+    def test_list_products_searches_by_category_and_brand(self):
+        saver = SaveProduct(self.products, self.suppliers, self.validator, self.taxonomy)
+        category_id = self.db.fetch("SELECT id FROM Categorias WHERE nombre = 'Monitores' LIMIT 1")[0][0]
+        brand_id = self.db.fetch("SELECT id FROM Marcas WHERE nombre = 'Samsung' LIMIT 1")[0][0]
+        saver.execute(
+            nombre="Monitor Curvo 27",
+            descripcion="",
+            precio="4200",
+            stock="3",
+            proveedor_id="1",
+            codigo_producto="7890001112299",
+            categoria_id=str(category_id),
+            marca_id=str(brand_id),
+        )
+
+        category_matches = ListProducts(self.products).execute("monitores")
+        brand_matches = ListProducts(self.products).execute("samsung")
+
+        self.assertTrue(any(item["categoria_nombre"] == "Monitores" for item in category_matches))
+        self.assertTrue(any(item["marca_nombre"] == "Samsung" for item in brand_matches))
 
     def test_bulk_import_products_rolls_back_full_batch_on_invalid_supplier(self):
         before_count = self.db.fetch("SELECT COUNT(*) FROM Productos")[0][0]

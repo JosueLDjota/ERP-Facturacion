@@ -29,6 +29,24 @@ def _parse_amount(value) -> float:
         raise ValueError("Precio HNL invalido.") from exc
 
 
+def _parse_optional_id(value, *, label: str, exists=None) -> int | None:
+    if value in (None, ""):
+        return None
+
+    try:
+        parsed_value = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Debe seleccionar una {label} valida.") from exc
+
+    if parsed_value <= 0:
+        raise ValueError(f"Debe seleccionar una {label} valida.")
+
+    if exists and not exists(parsed_value):
+        raise ValueError(f"La {label} seleccionada no existe.")
+
+    return parsed_value
+
+
 @dataclass(slots=True)
 class ProductValidationService:
     def validate(
@@ -40,9 +58,13 @@ class ProductValidationService:
         proveedor_id,
         descripcion: str = "",
         codigo_producto: str = "",
+        categoria_id=None,
+        marca_id=None,
         current_product_id: int | None = None,
         supplier_exists=None,
         codigo_exists=None,
+        category_exists=None,
+        brand_exists=None,
     ) -> Product:
         nombre = str(nombre or "").strip()
         descripcion = str(descripcion or "").strip()
@@ -82,6 +104,17 @@ class ProductValidationService:
         else:
             codigo_producto = None
 
+        categoria_id_val = _parse_optional_id(
+            categoria_id,
+            label="categoria",
+            exists=category_exists,
+        )
+        marca_id_val = _parse_optional_id(
+            marca_id,
+            label="marca",
+            exists=brand_exists,
+        )
+
         return Product(
             id=int(current_product_id) if current_product_id not in (None, "") else None,
             nombre=nombre,
@@ -89,5 +122,7 @@ class ProductValidationService:
             precio=precio_val,
             stock=stock_val,
             proveedor_id=prov_id_val,
+            categoria_id=categoria_id_val,
+            marca_id=marca_id_val,
             codigo_producto=codigo_producto,
         )
