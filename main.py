@@ -8,6 +8,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 
 from database import DBManager
+from erp.domain.services.access_control import allowed_sections_for_role, can_access_section
 from file_manager import FileManager
 from frames import (
     ClientsFrame,
@@ -37,6 +38,7 @@ class ERPApp(tk.Tk):
         self.file_manager = FileManager(self.db)
         self.notification_manager = NotificationManager(self, self.db)
         self.current_user = None
+        self.allowed_sections = set()
         self.nav_widgets = {}
         self.current_section = tk.StringVar(value="Dashboard")
 
@@ -102,39 +104,62 @@ class ERPApp(tk.Tk):
         ttk.Label(fields, text="Usuario", style="FormLabel.TLabel").grid(row=0, column=0, sticky="w")
         self.username_entry = ttk.Entry(fields, width=30)
         self.username_entry.grid(row=1, column=0, sticky="ew", pady=(4, 12))
-        self.username_entry.insert(0, "admin")
 
         ttk.Label(fields, text="Contrasena", style="FormLabel.TLabel").grid(row=2, column=0, sticky="w")
         self.password_entry = ttk.Entry(fields, show="*", width=30)
         self.password_entry.grid(row=3, column=0, sticky="ew", pady=(4, 18))
-        self.password_entry.insert(0, "1234")
 
-        ttk.Button(
+        self.login_button = ttk.Button(
             login_container,
             text="Acceder",
             style="Primary.TButton",
             command=self.authenticate,
-        ).grid(row=2, column=0, sticky="ew")
+        )
+        self.login_button.grid(row=2, column=0, sticky="ew")
 
         ttk.Label(
             login_container,
-            text="Sugerencia: Enter tambien confirma el acceso.",
+            text="Sugerencia: Enter confirma el acceso. Las credenciales ya no se rellenan automaticamente.",
             style="Muted.TLabel",
         ).grid(row=3, column=0, sticky="w", pady=(14, 0))
 
+        if not self.db.has_users():
+            ttk.Label(
+                login_container,
+                text="No hay usuarios registrados en esta base. Cree uno antes de iniciar sesion.",
+                style="Muted.TLabel",
+                wraplength=360,
+            ).grid(row=4, column=0, sticky="w", pady=(10, 0))
+            self.login_button.state(["disabled"])
+
         self.password_entry.bind("<Return>", lambda _event: self.authenticate())
+        self.username_entry.focus_set()
 
     def authenticate(self):
-        username = self.username_entry.get()
+        username = self.username_entry.get().strip()
         password = self.password_entry.get()
 
-        user = self.db.fetch(
-            "SELECT id, nombre, rol FROM Usuarios WHERE usuario = ? AND contrasena = ?",
-            (username, password),
-        )
+        if not username or not password:
+            messagebox.showwarning(
+                "Datos incompletos",
+                "Ingrese usuario y contrasena para iniciar sesion.",
+                parent=self,
+            )
+            return
+
+        if not self.db.has_users():
+            messagebox.showerror(
+                "Sin usuarios",
+                "La base actual no tiene usuarios registrados. Se requiere crear uno antes de iniciar sesion.",
+                parent=self,
+            )
+            return
+
+        user = self.db.authenticate_user(username, password)
 
         if user:
-            self.current_user = user[0]
+            self.current_user = user
+            self.allowed_sections = allowed_sections_for_role(self.current_user[2])
             self.login_frame.destroy()
             self.notification_manager.notify_login(self.current_user[1], self.current_user[2])
             self.show_main_interface()
@@ -231,7 +256,9 @@ class ERPApp(tk.Tk):
         nav_host.columnconfigure(0, weight=1)
         self.nav_frame.rowconfigure(4, weight=1)
 
-        for idx, section in enumerate(nav_order):
+        visible_sections = [section for section in nav_order if section in self.allowed_sections]
+
+        for idx, section in enumerate(visible_sections):
             button = ttk.Button(
                 nav_host,
                 text=section,
@@ -246,6 +273,13 @@ class ERPApp(tk.Tk):
         ttk.Button(bottom, text="Cerrar sesion", command=self.logout, style="Danger.TButton").pack(fill="x")
 
     def _on_nav_click(self, title):
+        if not can_access_section(self.current_user[2], title):
+            messagebox.showwarning(
+                "Acceso restringido",
+                "Su rol no tiene permisos para acceder a este modulo.",
+                parent=self,
+            )
+            return
         frame_class = self.frames[title]
         self.current_section.set(title)
         self._set_active_nav(title)
@@ -266,6 +300,7 @@ class ERPApp(tk.Tk):
         if messagebox.askyesno("Cerrar sesion", "Desea cerrar sesion?", parent=self):
             self.container.destroy()
             self.current_user = None
+            self.allowed_sections.clear()
             self.nav_widgets.clear()
             self.show_login()
 

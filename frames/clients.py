@@ -130,12 +130,11 @@ class ClientsFrame(ttk.Frame):
         filter_combo.grid(row=0, column=3, sticky="e")
         filter_combo.bind("<<ComboboxSelected>>", lambda _event: self.load_clients())
 
-        columns = ("ID", "Nombre", "Apellido", "DNI", "Teléfono", "Email", "Estado", "Mayorista")
+        columns = ("Nombre", "Apellido", "DNI", "Teléfono", "Email", "Estado", "Mayorista")
         self.tree = ttk.Treeview(list_card, columns=columns, show="headings", height=14)
         self.tree.grid(row=2, column=0, sticky="nsew")
 
         for col, width, anchor in (
-            ("ID", 60, "center"),
             ("Nombre", 130, "w"),
             ("Apellido", 130, "w"),
             ("DNI", 140, "center"),
@@ -206,8 +205,8 @@ class ClientsFrame(ttk.Frame):
             self.tree.insert(
                 "",
                 tk.END,
+                iid=str(id_cliente),
                 values=(
-                    id_cliente,
                     nombre,
                     apellido,
                     dni or "N/A",
@@ -273,9 +272,8 @@ class ClientsFrame(ttk.Frame):
         selection = self.tree.selection()
         if not selection:
             return
-        values = self.tree.item(selection[0], "values")
-        if values:
-            self.cliente_id_seleccionado = values[0]
+        if selection[0]:
+            self.cliente_id_seleccionado = selection[0]
             self.load_client_details(self.cliente_id_seleccionado)
 
     def load_client_details(self, cliente_id):

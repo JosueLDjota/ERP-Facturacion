@@ -231,8 +231,8 @@ class UnifiedPOSFrame(ttk.Frame):
 
         tree_frame = ttk.Frame(self.catalog_frame)
         tree_frame.pack(fill="both", expand=True)
-        self.products_tree = ttk.Treeview(tree_frame, columns=("ID", "Producto", "Stock", "Precio"), show="headings", height=12)
-        for col, text, width, anchor in (("ID", "ID", 50, "center"), ("Producto", "Producto", 210, "w"), ("Stock", "Stock", 70, "center"), ("Precio", "Precio", 95, "center")):
+        self.products_tree = ttk.Treeview(tree_frame, columns=("Producto", "Stock", "Precio"), show="headings", height=12)
+        for col, text, width, anchor in (("Producto", "Producto", 260, "w"), ("Stock", "Stock", 80, "center"), ("Precio", "Precio", 110, "center")):
             self.products_tree.heading(col, text=text)
             self.products_tree.column(col, width=width, anchor=anchor)
         y_scroll = ttk.Scrollbar(tree_frame, orient="vertical", command=self.products_tree.yview)
@@ -278,12 +278,11 @@ class UnifiedPOSFrame(ttk.Frame):
 
         self.cart_tree = ttk.Treeview(
             cart_panel,
-            columns=("ID", "Producto", "Cant", "PrecioU", "Desc", "Subtotal"),
+            columns=("Producto", "Cant", "PrecioU", "Desc", "Subtotal"),
             show="headings",
             height=16,
         )
         for col, text, width, anchor in (
-            ("ID", "ID", 50, "center"),
             ("Producto", "Producto", 220, "w"),
             ("Cant", "Cant.", 70, "center"),
             ("PrecioU", "P. Unit. (HNL)", 120, "e"),
@@ -457,7 +456,9 @@ class UnifiedPOSFrame(ttk.Frame):
 
     def load_products(self):
         self.product_index.clear()
-        rows = self.db.fetch("SELECT id, nombre, descripcion, precio, stock FROM Productos ORDER BY nombre")
+        rows = self.db.fetch(
+            "SELECT id, nombre, descripcion, precio, stock, COALESCE(codigo_producto, '') FROM Productos ORDER BY nombre"
+        )
         self._render_products(rows)
 
     def _render_products(self, rows):
@@ -466,9 +467,9 @@ class UnifiedPOSFrame(ttk.Frame):
 
         search_term = self.search_var.get().strip().lower()
         for row in rows:
-            prod_id, nombre, descripcion, precio, stock = row
+            prod_id, nombre, descripcion, precio, stock, codigo_producto = row
             if search_term:
-                haystack = f"{nombre} {descripcion or ''} {prod_id}".lower()
+                haystack = f"{nombre} {descripcion or ''} {codigo_producto}".lower()
                 if search_term not in haystack:
                     continue
 
@@ -478,8 +479,9 @@ class UnifiedPOSFrame(ttk.Frame):
                 "descripcion": descripcion or "",
                 "precio": float(precio or 0),
                 "stock": int(stock or 0),
+                "codigo_producto": str(codigo_producto or ""),
             }
-            self.products_tree.insert("", "end", iid=str(prod_id), values=(prod_id, nombre, stock, format_hnl(precio)))
+            self.products_tree.insert("", "end", iid=str(prod_id), values=(nombre, stock, format_hnl(precio)))
 
     def filter_products(self):
         self.load_products()
@@ -496,8 +498,8 @@ class UnifiedPOSFrame(ttk.Frame):
             return
 
         self._set_detail_text(
-            f"ID: {data['id']}\n"
             f"Producto: {data['nombre']}\n"
+            f"Codigo: {data.get('codigo_producto') or 'N/D'}\n"
             f"Stock: {data['stock']}\n"
             f"Precio: {format_hnl(data['precio'])}\n\n"
             f"Descripcion:\n{data['descripcion'] or 'Sin descripcion'}"
@@ -836,7 +838,7 @@ class UnifiedPOSFrame(ttk.Frame):
                 "",
                 "end",
                 iid=str(prod_id),
-                values=(prod_id, item["nombre"], qty, format_hnl(price), desc_text, format_hnl(subtotal)),
+                values=(item["nombre"], qty, format_hnl(price), desc_text, format_hnl(subtotal)),
             )
 
         invoice = self._calculate_invoice_totals(validate_payment=False)
@@ -1180,41 +1182,18 @@ class UnifiedPOSFrame(ttk.Frame):
         sale = self.pending_sale
         cart_data = sale["cart_snapshot"]
         try:
-            self.db.execute(
-                """
-                INSERT INTO Ventas (
-                    id, fecha, total, monto_pagado, vuelto, metodo_pago, usuario_id, id_cliente, tipo_recibo
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    sale["venta_id"],
-                    sale["fecha"],
-                    sale["total"],
-                    sale["pagado"],
-                    sale["vuelto"],
-                    sale.get("metodo_pago", "NO_DEFINIDO"),
-                    self.app.current_user[0],
-                    sale["cliente_id"],
-                    f"POS-{sale['modo']}",
-                ),
+            self.db.create_pos_sale(
+                sale_id=sale["venta_id"],
+                fecha=sale["fecha"],
+                total=sale["total"],
+                pagado=sale["pagado"],
+                vuelto=sale["vuelto"],
+                metodo_pago=sale.get("metodo_pago", "NO_DEFINIDO"),
+                usuario_id=self.app.current_user[0],
+                cliente_id=sale["cliente_id"],
+                tipo_recibo=f"POS-{sale['modo']}",
+                cart_data=cart_data,
             )
-
-            for prod_id, item in cart_data.items():
-                qty = int(item["cantidad"])
-                price = float(item["precio_unitario"])
-                pct = float(item.get("descuento_porcentaje", 0))
-                discount_amount = (price * qty) * pct
-                subtotal = (price * qty) - discount_amount
-
-                self.db.execute(
-                    """
-                    INSERT INTO DetalleVenta (
-                        venta_id, producto_id, nombre_producto, cantidad, precio_unitario, descuento, subtotal
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (sale["venta_id"], prod_id, item["nombre"], qty, price, discount_amount, subtotal),
-                )
-                self.db.execute("UPDATE Productos SET stock = stock - ? WHERE id = ?", (qty, prod_id))
 
             html_content = self.generate_receipt_html(
                 sale["venta_id"],
@@ -1226,8 +1205,14 @@ class UnifiedPOSFrame(ttk.Frame):
                 sale["cliente_id"],
                 sale.get("metodo_pago"),
             )
-            self.save_receipt(html_content, sale["venta_id"])
 
+            receipt_error = None
+            try:
+                self.save_receipt(html_content, sale["venta_id"])
+            except Exception as exc:
+                receipt_error = exc
+
+            self.load_products()
             self.clear_cart(silent=True)
             self.pending_sale = sale
             self.update_cart_display()
@@ -1235,12 +1220,20 @@ class UnifiedPOSFrame(ttk.Frame):
             self.status_var.set("Venta procesada correctamente.")
             self._close_summary_window()
 
-            if messagebox.askyesno("Recibo", "Venta procesada. Desea abrir el recibo?"):
+            if receipt_error:
+                messagebox.showwarning(
+                    "Venta guardada con advertencia",
+                    f"La venta se registro y el stock se actualizo, pero no se pudo guardar el recibo: {receipt_error}",
+                )
+            elif messagebox.askyesno("Recibo", "Venta procesada. Desea abrir el recibo?"):
                 self.print_receipt(html_content)
             else:
                 messagebox.showinfo("Exito", "Venta confirmada y guardada en SQLite.")
 
         except Exception as e:
+            self.load_products()
+            self.update_cart_display()
+            self.status_var.set(f"No se pudo procesar la venta: {e}")
             messagebox.showerror("Error", f"No se pudo procesar la venta: {e}")
 
     def _receipt_items(self, cart_data):

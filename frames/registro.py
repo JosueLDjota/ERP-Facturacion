@@ -13,6 +13,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from tkcalendar import DateEntry
 
+from erp.domain.services.access_control import can_manage_legacy_registry
 from receipt_builder import build_receipt_html
 from .ui import create_modal, format_hnl
 
@@ -23,7 +24,6 @@ class RegistroVentasFrame(ttk.Frame):
     FILTER_FECHA = "Fecha"
     FILTER_PRODUCTO = "Producto"
     FILTER_CLIENTE = "Nombre de cliente"
-    FILTER_VENTA_ID = "ID de venta"
 
     MONTH_OPTIONS = (
         ("Todos", ""),
@@ -137,7 +137,7 @@ class RegistroVentasFrame(ttk.Frame):
             self.filters_frame,
             textvariable=self.filter_type_var,
             state="readonly",
-            values=(self.FILTER_FECHA, self.FILTER_PRODUCTO, self.FILTER_CLIENTE, self.FILTER_VENTA_ID),
+            values=(self.FILTER_FECHA, self.FILTER_PRODUCTO, self.FILTER_CLIENTE),
             width=28,
         )
         self.filter_type_combo.grid(row=1, column=1, sticky="ew", pady=4)
@@ -169,25 +169,35 @@ class RegistroVentasFrame(ttk.Frame):
             style="Secondary.TButton",
             command=self.reprint_selected_invoice,
         ).grid(row=0, column=4, sticky="ew", padx=4)
-        ttk.Button(
+        self.cleanup_button = ttk.Button(
             action_frame,
             text="Depurar legado",
             style="Danger.TButton",
             command=self.cleanup_legacy_registry,
-        ).grid(row=0, column=5, sticky="ew", padx=(4, 0))
+        )
+        self.cleanup_button.grid(row=0, column=5, sticky="ew", padx=(4, 0))
 
         self.status_label = ttk.Label(self.filters_frame, text="", style="Muted.TLabel")
         self.status_label.grid(row=4, column=0, columnspan=2, sticky="w", pady=(8, 0))
         self.status_label.grid_remove()
 
+        ttk.Label(
+            self.filters_frame,
+            text="Fuente principal: Ventas + DetalleVenta. La tabla ventas_diarias se conserva solo para trazabilidad legacy.",
+            style="Muted.TLabel",
+            wraplength=920,
+        ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(8, 0))
+
+        if not can_manage_legacy_registry(self.app.current_user[2]):
+            self.cleanup_button.state(["disabled"])
+
         self._render_dynamic_filter_inputs()
 
     def _build_table(self):
-        columns = ("venta_id", "fecha", "cliente", "total", "pagado", "vuelto", "productos", "lineas")
+        columns = ("fecha", "cliente", "total", "pagado", "vuelto", "productos", "lineas")
         self.tree = ttk.Treeview(self.table_frame, columns=columns, show="headings", height=18)
 
         headings = {
-            "venta_id": "ID Venta",
             "fecha": "Fecha",
             "cliente": "Cliente",
             "total": "Total",
@@ -197,7 +207,6 @@ class RegistroVentasFrame(ttk.Frame):
             "lineas": "Items",
         }
         widths = {
-            "venta_id": (200, "center"),
             "fecha": (165, "center"),
             "cliente": (240, "w"),
             "total": (130, "e"),
@@ -271,20 +280,29 @@ class RegistroVentasFrame(ttk.Frame):
             combo.bind("<<ComboboxSelected>>", self._schedule_refresh)
             return
 
-        ttk.Label(self.dynamic_filter_frame, text="ID de venta:", style="FormLabel.TLabel").grid(row=0, column=0, sticky="w", pady=4)
-        entry = ttk.Entry(self.dynamic_filter_frame, textvariable=self.venta_id_var)
-        entry.grid(row=0, column=1, sticky="ew", pady=4)
-
     def _on_filter_type_change(self, _event=None):
         self.clear_filters(refresh=False)
         self._render_dynamic_filter_inputs()
         self._clear_status()
         self._clear_table()
 
+    @staticmethod
+    def _build_visible_option_map(rows, fallback_label):
+        option_map = {}
+        label_counts = {}
+        for row_id, label in rows:
+            base_label = str(label or fallback_label).strip() or fallback_label
+            visible_label = base_label
+            label_counts[base_label] = label_counts.get(base_label, 0) + 1
+            if label_counts[base_label] > 1:
+                visible_label = f"{base_label} ({label_counts[base_label]})"
+            option_map[visible_label] = row_id
+        return option_map
+
     def _load_filter_options(self):
         options = self.app.db.fetch_filter_options()
-        self.product_map = {f"{row[0]} - {row[1]}": row[0] for row in options.get("productos", [])}
-        self.client_map = {f"{row[0]} - {row[1]}": row[0] for row in options.get("clientes", [])}
+        self.product_map = self._build_visible_option_map(options.get("productos", []), "Producto sin nombre")
+        self.client_map = self._build_visible_option_map(options.get("clientes", []), "Cliente sin nombre")
         self._render_dynamic_filter_inputs()
 
     def _build_filter_payload(self):
@@ -330,10 +348,6 @@ class RegistroVentasFrame(ttk.Frame):
                 raise ValueError("Seleccione un cliente valido del listado.")
             return payload
 
-        venta_id = self.venta_id_var.get().strip()
-        if not venta_id:
-            raise ValueError("Ingrese un ID de venta.")
-        payload["venta_id"] = venta_id
         return payload
 
     def apply_filters(self):
@@ -377,7 +391,6 @@ class RegistroVentasFrame(ttk.Frame):
                 "end",
                 iid=str(venta_id),
                 values=(
-                    venta_id,
                     fecha,
                     cliente,
                     format_hnl(total),
@@ -436,7 +449,6 @@ class RegistroVentasFrame(ttk.Frame):
         for row in self.current_rows:
             rows_html.append(
                 "<tr>"
-                f"<td>{escape(str(row[0]))}</td>"
                 f"<td>{escape(str(row[1]))}</td>"
                 f"<td>{escape(str(row[5] or 'Cliente General'))}</td>"
                 f"<td>{escape(format_hnl(row[2]))}</td>"
@@ -467,7 +479,6 @@ class RegistroVentasFrame(ttk.Frame):
     <table>
         <thead>
             <tr>
-                <th>ID Venta</th>
                 <th>Fecha</th>
                 <th>Cliente</th>
                 <th>Total</th>
@@ -553,6 +564,10 @@ class RegistroVentasFrame(ttk.Frame):
         self._show_info("Reimpresion generada", "Factura abierta en el navegador. Use Ctrl+P para imprimir.")
 
     def cleanup_legacy_registry(self):
+        if not can_manage_legacy_registry(self.app.current_user[2]):
+            self._show_warning("Acceso restringido", "Solo administracion puede depurar tablas legacy.")
+            return
+
         if not self._ask_yes_no(
             "Depuracion de legado",
             "Se depurara la tabla legado 'ventas_diarias' eliminando huerfanos y duplicados verificables.\n\nDesea continuar?",

@@ -62,14 +62,13 @@ class SupplierFrame(ttk.Frame):
     def _create_supplier_list(self):
         self.tree = ttk.Treeview(
             self.list_frame,
-            columns=("ID", "Nombre", "Contacto", "Teléfono"),
+            columns=("Nombre", "Contacto", "Teléfono"),
             show="headings",
             height=15,
         )
         self.tree.grid(row=0, column=0, sticky="nsew", pady=(0, 8))
 
         for col, width, anchor in (
-            ("ID", 60, "center"),
             ("Nombre", 260, "w"),
             ("Contacto", 220, "w"),
             ("Teléfono", 140, "center"),
@@ -126,17 +125,17 @@ class SupplierFrame(ttk.Frame):
         self.tree.delete(*self.tree.get_children())
         suppliers = self.db.fetch("SELECT id, nombre, contacto, telefono FROM Proveedores ORDER BY id DESC")
         for sup in suppliers:
-            self.tree.insert("", "end", values=sup)
+            self.tree.insert("", "end", iid=str(sup[0]), values=sup[1:])
 
     def select_supplier(self, _event):
         selected_item = self.tree.focus()
         if not selected_item:
             return
         values = self.tree.item(selected_item, "values")
-        self.sup_id.set(values[0])
-        self.nombre.set(values[1])
-        self.contacto.set(values[2])
-        self.telefono.set(values[3])
+        self.sup_id.set(selected_item)
+        self.nombre.set(values[0])
+        self.contacto.set(values[1])
+        self.telefono.set(values[2])
 
     def reset_form(self):
         self.sup_id.set("")
@@ -175,8 +174,9 @@ class SupplierFrame(ttk.Frame):
             self._show_warning("Advertencia", "Seleccione un proveedor primero.")
             return
 
-        sup_id = self.tree.item(selected_item, "values")[0]
-        if self._ask_yes_no("Confirmar", f"¿Eliminar el proveedor ID {sup_id}?"):
+        sup_id = selected_item
+        supplier_name = self.tree.item(selected_item, "values")[0]
+        if self._ask_yes_no("Confirmar", f"¿Eliminar el proveedor \"{supplier_name}\"?"):
             self.db.execute("DELETE FROM Proveedores WHERE id = ?", (sup_id,))
             self._show_info("Éxito", "Proveedor eliminado.")
             self.load_suppliers()

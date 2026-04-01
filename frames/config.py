@@ -67,12 +67,11 @@ class ConfigFrame(ttk.Frame):
 
         self.disc_tree = ttk.Treeview(
             list_frame,
-            columns=("ID", "Nombre", "Tipo", "Porcentaje"),
+            columns=("Nombre", "Tipo", "Porcentaje"),
             show="headings",
             height=14,
         )
         for col, width, anchor in (
-            ("ID", 60, "center"),
             ("Nombre", 240, "w"),
             ("Tipo", 130, "center"),
             ("Porcentaje", 120, "center"),
@@ -126,7 +125,7 @@ class ConfigFrame(ttk.Frame):
 
         discounts = self.db.fetch("SELECT id, nombre, tipo, porcentaje FROM Descuentos ORDER BY nombre")
         for disc in discounts:
-            self.disc_tree.insert("", "end", values=(disc[0], disc[1], disc[2], f"{int(disc[3] * 100)}%"))
+            self.disc_tree.insert("", "end", iid=str(disc[0]), values=(disc[1], disc[2], f"{int(disc[3] * 100)}%"))
 
     def select_discount(self, _event):
         selected_item = self.disc_tree.focus()
@@ -134,10 +133,10 @@ class ConfigFrame(ttk.Frame):
             return
 
         values = self.disc_tree.item(selected_item, "values")
-        self.disc_id.set(values[0])
-        self.disc_nombre.set(values[1])
-        self.disc_tipo.set(values[2])
-        self.disc_porcentaje.set(values[3].strip("%"))
+        self.disc_id.set(selected_item)
+        self.disc_nombre.set(values[0])
+        self.disc_tipo.set(values[1])
+        self.disc_porcentaje.set(values[2].strip("%"))
 
     def reset_discount_form(self):
         self.disc_id.set("")
@@ -185,8 +184,9 @@ class ConfigFrame(ttk.Frame):
             messagebox.showwarning("Advertencia", "Seleccione un descuento primero.", parent=self._parent())
             return
 
-        disc_id = self.disc_tree.item(selected_item, "values")[0]
-        if messagebox.askyesno("Confirmar", f"Eliminar el descuento ID {disc_id}?", parent=self._parent()):
+        disc_id = selected_item
+        disc_name = self.disc_tree.item(selected_item, "values")[0]
+        if messagebox.askyesno("Confirmar", f"Eliminar el descuento \"{disc_name}\"?", parent=self._parent()):
             self.db.execute("DELETE FROM Descuentos WHERE id = ?", (disc_id,))
             messagebox.showinfo("Exito", "Descuento eliminado.", parent=self._parent())
             self.load_discounts()
