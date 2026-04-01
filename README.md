@@ -97,4 +97,4 @@ python -m unittest discover -s tests -p "test_*.py"
 
 - El proyecto actualmente es desktop-first (no web).
 - Los recibos HTML se guardan en una ruta configurable desde el sistema.
-- Existe codigo modular en `erp/` para facilitar refactor y escalabilidad.
+- Existe codigo modular en `erp/` para facilitar refactor y escalabilidad....
