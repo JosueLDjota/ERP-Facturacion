@@ -27,7 +27,11 @@ class SaleRepository:
 
     def list_products(self) -> list[dict]:
         rows = self.db.fetch(
-            "SELECT id, nombre, descripcion, precio, stock FROM Productos ORDER BY nombre"
+            """
+            SELECT id, nombre, descripcion, precio, stock, COALESCE(codigo_producto, '')
+            FROM Productos
+            ORDER BY nombre
+            """
         )
         return [
             {
@@ -36,6 +40,7 @@ class SaleRepository:
                 "descripcion": str(row[2] or ""),
                 "precio": float(row[3] or 0),
                 "stock": int(row[4] or 0),
+                "codigo_producto": str(row[5] or ""),
             }
             for row in rows
         ]
@@ -94,60 +99,24 @@ class SaleRepository:
         total: float,
         pagado: float,
         vuelto: float,
+        metodo_pago: str,
         usuario_id: int,
         cliente_id: int | None,
         tipo_recibo: str,
-        items: list[dict],
+        items: dict,
     ) -> None:
         try:
-            cursor = self.db.conn.cursor()
-            cursor.execute("BEGIN")
-            cursor.execute(
-                """
-                INSERT INTO Ventas (id, fecha, total, monto_pagado, vuelto, usuario_id, id_cliente, tipo_recibo)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (sale_id, fecha, total, pagado, vuelto, usuario_id, cliente_id, tipo_recibo),
+            self.db.create_pos_sale(
+                sale_id=sale_id,
+                fecha=fecha,
+                total=total,
+                pagado=pagado,
+                vuelto=vuelto,
+                metodo_pago=metodo_pago,
+                usuario_id=usuario_id,
+                cliente_id=cliente_id,
+                tipo_recibo=tipo_recibo,
+                cart_data=items,
             )
-
-            for item in items:
-                producto_id = int(item["producto_id"])
-                cantidad = int(item["cantidad"])
-                precio = float(item["precio_unitario"])
-                pct = float(item.get("descuento_porcentaje", 0))
-                discount_amount = (precio * cantidad) * pct
-                subtotal = (precio * cantidad) - discount_amount
-
-                stock_row = cursor.execute(
-                    "SELECT stock FROM Productos WHERE id = ?",
-                    (producto_id,),
-                ).fetchone()
-                if not stock_row:
-                    raise RepositoryError(f"Producto {producto_id} no existe.")
-                if int(stock_row[0]) < cantidad:
-                    raise RepositoryError(f"Stock insuficiente para producto {producto_id}.")
-
-                cursor.execute(
-                    """
-                    INSERT INTO DetalleVenta (venta_id, producto_id, nombre_producto, cantidad, precio_unitario, descuento, subtotal)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        sale_id,
-                        producto_id,
-                        str(item["nombre"]),
-                        cantidad,
-                        precio,
-                        discount_amount,
-                        subtotal,
-                    ),
-                )
-                cursor.execute(
-                    "UPDATE Productos SET stock = stock - ? WHERE id = ?",
-                    (cantidad, producto_id),
-                )
-
-            self.db.conn.commit()
         except Exception as exc:
-            self.db.conn.rollback()
             raise RepositoryError(str(exc)) from exc

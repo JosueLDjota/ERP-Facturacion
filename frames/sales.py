@@ -13,8 +13,11 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import messagebox, ttk
 
+from erp.data.repositories.sale_repository import SaleRepository
 from erp.domain.services.invoice_calculator import calculate_invoice_totals
-from receipt_builder import build_receipt_html
+from erp.domain.services.receipt_service import ReceiptService
+from erp.domain.use_cases.sales.create_pos_sale import CreatePOSSale
+from erp.domain.use_cases.sales.load_pos_context import LoadPOSContext
 from .ui import FONTS, PALETTE, center_window, format_hnl, normalize_hnl_amount, parse_hnl
 
 
@@ -25,6 +28,10 @@ class UnifiedPOSFrame(ttk.Frame):
         super().__init__(parent, padding="8")
         self.app = app
         self.db = app.db
+        self.sale_repository = SaleRepository(self.db)
+        self.receipt_service = ReceiptService()
+        self.load_pos_context_use_case = LoadPOSContext(self.sale_repository)
+        self.create_pos_sale_use_case = CreatePOSSale(self.sale_repository, self.receipt_service)
 
         self.cart = {}
         self.product_index = {}
@@ -64,9 +71,7 @@ class UnifiedPOSFrame(ttk.Frame):
 
         self._configure_styles()
         self._build_ui()
-        self.load_discounts()
-        self.load_products()
-        self.load_clients()
+        self.load_pos_context()
         self.update_cart_display()
 
         self.app.bind("<F1>", lambda e: self.focus_search(), add="+")
@@ -437,15 +442,32 @@ class UnifiedPOSFrame(ttk.Frame):
         self.update_cart_display()
         self.refresh_preview()
 
+    def load_pos_context(self, *, load_products=True, load_clients=True, load_discounts=True):
+        context = self.load_pos_context_use_case.execute(
+            load_products=load_products,
+            load_clients=load_clients,
+            load_discounts=load_discounts,
+        )
+        if load_discounts:
+            self._apply_discount_context(context.discounts)
+        if load_products:
+            self._render_products(context.products)
+        if load_clients:
+            self._apply_client_context(context.clients)
+
     def load_discounts(self):
-        rows = self.db.fetch("SELECT id, nombre, tipo, porcentaje FROM Descuentos ORDER BY nombre")
+        self.load_pos_context(load_products=False, load_clients=False, load_discounts=True)
+
+    def _apply_discount_context(self, discounts):
         options = ["Sin descuento"]
         self.discount_data = {0: {"id": 0, "nombre": "Sin descuento", "tipo": None, "porcentaje": 0.0}}
         self.discount_by_type = {}
 
-        for idx, row in enumerate(rows, start=1):
-            disc_id, nombre, tipo, porcentaje = row
-            porcentaje = float(porcentaje or 0)
+        for idx, discount in enumerate(discounts, start=1):
+            disc_id = int(discount["id"])
+            nombre = str(discount["nombre"] or "")
+            tipo = discount["tipo"]
+            porcentaje = float(discount["porcentaje"] or 0)
             self.discount_data[idx] = {"id": disc_id, "nombre": nombre, "tipo": tipo, "porcentaje": porcentaje}
             options.append(f"{nombre} - {int(round(porcentaje * 100))}%")
             if tipo:
@@ -456,18 +478,21 @@ class UnifiedPOSFrame(ttk.Frame):
 
     def load_products(self):
         self.product_index.clear()
-        rows = self.db.fetch(
-            "SELECT id, nombre, descripcion, precio, stock, COALESCE(codigo_producto, '') FROM Productos ORDER BY nombre"
-        )
-        self._render_products(rows)
+        self.load_pos_context(load_products=True, load_clients=False, load_discounts=False)
 
     def _render_products(self, rows):
+        self.product_index.clear()
         for item in self.products_tree.get_children():
             self.products_tree.delete(item)
 
         search_term = self.search_var.get().strip().lower()
         for row in rows:
-            prod_id, nombre, descripcion, precio, stock, codigo_producto = row
+            prod_id = int(row["id"])
+            nombre = row["nombre"]
+            descripcion = row.get("descripcion") or ""
+            precio = float(row.get("precio") or 0)
+            stock = int(row.get("stock") or 0)
+            codigo_producto = str(row.get("codigo_producto") or "")
             if search_term:
                 haystack = f"{nombre} {descripcion or ''} {codigo_producto}".lower()
                 if search_term not in haystack:
@@ -651,18 +676,17 @@ class UnifiedPOSFrame(ttk.Frame):
         self.refresh_preview()
 
     def load_clients(self):
-        rows = self.db.fetch(
-            """
-            SELECT id, nombre, apellido, COALESCE(mayorista, 0)
-            FROM Clientes
-            WHERE activo = 1
-            ORDER BY apellido, nombre
-            """
-        )
+        self.load_pos_context(load_products=False, load_clients=True, load_discounts=False)
+
+    def _apply_client_context(self, clients):
         display_names = ["Cliente General"]
         self.client_data = {"Cliente General": {"id": None, "mayorista": False}}
 
-        for client_id, nombre, apellido, mayorista in rows:
+        for client in clients:
+            client_id = int(client["id"])
+            nombre = str(client["nombre"] or "")
+            apellido = str(client["apellido"] or "")
+            mayorista = bool(client["mayorista"])
             label = f"{apellido}, {nombre}"
             if mayorista:
                 label += " (Mayorista)"
@@ -1180,41 +1204,34 @@ class UnifiedPOSFrame(ttk.Frame):
             return
 
         sale = self.pending_sale
-        cart_data = sale["cart_snapshot"]
         try:
-            self.db.create_pos_sale(
-                sale_id=sale["venta_id"],
-                fecha=sale["fecha"],
-                total=sale["total"],
-                pagado=sale["pagado"],
-                vuelto=sale["vuelto"],
-                metodo_pago=sale.get("metodo_pago", "NO_DEFINIDO"),
+            result = self.create_pos_sale_use_case.execute(
+                sale,
                 usuario_id=self.app.current_user[0],
-                cliente_id=sale["cliente_id"],
-                tipo_recibo=f"POS-{sale['modo']}",
-                cart_data=cart_data,
+                preview_mode=self.preview_mode_var.get(),
+                number_to_words=self.number_to_words,
             )
-
-            html_content = self.generate_receipt_html(
-                sale["venta_id"],
-                sale["total"],
-                sale["pagado"],
-                sale["vuelto"],
-                sale["fecha"],
-                cart_data,
-                sale["cliente_id"],
-                sale.get("metodo_pago"),
-            )
+            html_content = result.receipt_html
 
             receipt_error = None
             try:
-                self.save_receipt(html_content, sale["venta_id"])
+                self.save_receipt(html_content, result.sale_id)
             except Exception as exc:
                 receipt_error = exc
 
             self.load_products()
             self.clear_cart(silent=True)
-            self.pending_sale = sale
+            self.pending_sale = {
+                **sale,
+                "venta_id": result.sale_id,
+                "fecha": result.fecha,
+                "total": result.total,
+                "pagado": result.monto_pagado,
+                "vuelto": result.vuelto,
+                "metodo_pago": result.metodo_pago,
+                "cliente_id": result.cliente_id,
+                "cart_snapshot": result.cart_data,
+            }
             self.update_cart_display()
             self.refresh_preview()
             self.status_var.set("Venta procesada correctamente.")
@@ -1237,41 +1254,23 @@ class UnifiedPOSFrame(ttk.Frame):
             messagebox.showerror("Error", f"No se pudo procesar la venta: {e}")
 
     def _receipt_items(self, cart_data):
-        items = []
-        for prod_id, item in cart_data.items():
-            pct = float(item.get("descuento_porcentaje", 0))
-            subtotal = (float(item["precio_unitario"]) * int(item["cantidad"])) * (1 - pct)
-            items.append(
-                {
-                    "producto_id": prod_id,
-                    "nombre": item["nombre"],
-                    "cantidad": item["cantidad"],
-                    "precio_unitario": item["precio_unitario"],
-                    "descuento_porcentaje": pct,
-                    "descuento_monto": (float(item["precio_unitario"]) * int(item["cantidad"])) * pct,
-                    "subtotal": subtotal,
-                    "tax_rate": float(item.get("tax_rate", 0.15)),
-                    "tax_exempt": bool(item.get("tax_exempt", False)),
-                }
-            )
-        return items
+        return self.receipt_service.build_receipt_items(cart_data)
+
+    def _get_receipt_client(self, cliente_id):
+        if cliente_id in (None, ""):
+            return None
+        return self.sale_repository.get_client_detail(int(cliente_id))
 
     def generate_receipt_html(self, venta_id, total, pagado, vuelto, fecha, cart_data=None, cliente_id=None, metodo_pago=None):
         cart_data = cart_data or (self.pending_sale or {}).get("cart_snapshot", self.cart)
-        cliente = None
-        if cliente_id:
-            rows = self.db.fetch("SELECT nombre, apellido, dni, telefono, direccion FROM Clientes WHERE id = ?", (cliente_id,))
-            if rows:
-                cliente = {"nombre": rows[0][0], "apellido": rows[0][1], "dni": rows[0][2], "telefono": rows[0][3], "direccion": rows[0][4]}
-
-        return build_receipt_html(
+        return self.receipt_service.build_html(
             venta_id=venta_id,
             fecha=fecha,
             total=total,
             monto_pagado=pagado,
             vuelto=vuelto,
-            items=self._receipt_items(cart_data),
-            cliente=cliente,
+            cart_data=cart_data,
+            cliente=self._get_receipt_client(cliente_id),
             metodo_pago=metodo_pago or self.payment_method_var.get() or "NO_DEFINIDO",
             mode=self.preview_mode_var.get(),
             number_to_words=self.number_to_words,
@@ -1309,11 +1308,16 @@ class UnifiedPOSFrame(ttk.Frame):
         )
 
     def _build_text_receipt(self, venta_id, total, pagado, vuelto, fecha, cart_data, cliente_id, metodo_pago, width):
+        cliente_data = self._get_receipt_client(cliente_id)
         cliente = None
-        if cliente_id:
-            rows = self.db.fetch("SELECT nombre, apellido, dni, telefono, direccion FROM Clientes WHERE id = ?", (cliente_id,))
-            if rows:
-                cliente = rows[0]
+        if cliente_data:
+            cliente = (
+                cliente_data.get("nombre"),
+                cliente_data.get("apellido"),
+                cliente_data.get("dni"),
+                cliente_data.get("telefono"),
+                cliente_data.get("direccion"),
+            )
 
         cart_data = cart_data or self.cart
         lines = [

@@ -8,7 +8,9 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 
 from database import DBManager
+from erp.data.repositories.user_repository import UserRepository
 from erp.domain.services.access_control import allowed_sections_for_role, can_access_section
+from erp.domain.use_cases.auth.login_user import LoginUser
 from file_manager import FileManager
 from frames import (
     ClientsFrame,
@@ -35,6 +37,8 @@ class ERPApp(tk.Tk):
         self.base_dir = Path(__file__).resolve().parent
 
         self.db = DBManager()
+        self.user_repository = UserRepository(self.db)
+        self.login_user = LoginUser(self.user_repository)
         self.file_manager = FileManager(self.db)
         self.notification_manager = NotificationManager(self, self.db)
         self.current_user = None
@@ -123,7 +127,7 @@ class ERPApp(tk.Tk):
             style="Muted.TLabel",
         ).grid(row=3, column=0, sticky="w", pady=(14, 0))
 
-        if not self.db.has_users():
+        if not self.user_repository.has_users():
             ttk.Label(
                 login_container,
                 text="No hay usuarios registrados en esta base. Cree uno antes de iniciar sesion.",
@@ -138,34 +142,33 @@ class ERPApp(tk.Tk):
     def authenticate(self):
         username = self.username_entry.get().strip()
         password = self.password_entry.get()
+        response = self.login_user.execute(username, password)
 
-        if not username or not password:
+        if response.status == "missing_credentials":
             messagebox.showwarning(
                 "Datos incompletos",
-                "Ingrese usuario y contrasena para iniciar sesion.",
+                response.message,
                 parent=self,
             )
             return
 
-        if not self.db.has_users():
+        if response.status == "missing_users":
             messagebox.showerror(
                 "Sin usuarios",
-                "La base actual no tiene usuarios registrados. Se requiere crear uno antes de iniciar sesion.",
+                response.message,
                 parent=self,
             )
             return
 
-        user = self.db.authenticate_user(username, password)
-
-        if user:
-            self.current_user = user
+        if response.ok:
+            self.current_user = response.user
             self.allowed_sections = allowed_sections_for_role(self.current_user[2])
             self.login_frame.destroy()
             self.notification_manager.notify_login(self.current_user[1], self.current_user[2])
             self.show_main_interface()
             return
 
-        messagebox.showerror("Error", "Usuario o contrasena incorrectos", parent=self)
+        messagebox.showerror("Error", response.message or "Usuario o contrasena incorrectos", parent=self)
 
     def show_main_interface(self):
         self.container = ttk.Frame(self, style="App.TFrame")
