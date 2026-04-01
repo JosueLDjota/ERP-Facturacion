@@ -1,6 +1,15 @@
 """
-main.py
-Punto de entrada de la aplicacion ERP.
+Archivo de entrada de la aplicacion ERP de escritorio.
+
+Este modulo levanta Tkinter, inicializa la conexion principal a SQLite,
+construye el contexto compartido de la sesion y conecta la navegacion de la
+UI con los casos de uso ya encapsulados en `erp/`.
+
+Responsabilidades principales:
+- crear la aplicacion y el tema visual global,
+- resolver autenticacion inicial,
+- mantener usuario actual, secciones permitidas y contenedores de frames,
+- actuar como composition root de servicios compartidos para la UI.
 """
 
 from pathlib import Path
@@ -11,8 +20,8 @@ from database import DBManager
 from erp.data.repositories.user_repository import UserRepository
 from erp.domain.services.access_control import allowed_sections_for_role, can_access_section
 from erp.domain.use_cases.auth.login_user import LoginUser
-from file_manager import FileManager
-from frames import (
+from erp.infrastructure.io.file_manager import FileManager
+from erp.ui.frames import (
     ClientsFrame,
     ConfigFrame,
     DashboardFrame,
@@ -21,8 +30,8 @@ from frames import (
     SupplierFrame,
     UnifiedPOSFrame,
 )
-from frames.notificaciones import NotificationManager
-from frames.ui import apply_app_theme, resolve_resource_path
+from erp.ui.notifications import NotificationManager
+from erp.ui.shared import apply_app_theme, resolve_resource_path
 
 
 class ERPApp(tk.Tk):

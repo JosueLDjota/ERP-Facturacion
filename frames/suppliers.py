@@ -3,6 +3,11 @@ frames/suppliers.py
 Gestión de proveedores con CRUD.
 """
 
+# Contexto del archivo:
+# Esta pantalla administra el catalogo de proveedores usado por productos e
+# importaciones CSV. Aunque es una vista legacy, cualquier cambio aqui impacta
+# la consistencia del inventario y de los formularios de alta/edicion.
+
 import tkinter as tk
 from tkinter import messagebox, ttk
 

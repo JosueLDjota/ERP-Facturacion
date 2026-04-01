@@ -3,6 +3,12 @@ frames/config.py
 Configuracion del sistema, descuentos y plantilla de recibos.
 """
 
+# Contexto del archivo:
+# Este modulo expone configuraciones administrativas que afectan el sistema de
+# forma transversal: descuentos, parametros de recibo y catalogos auxiliares.
+# Debe tratarse como una pantalla sensible porque modifica comportamiento
+# global del ERP y no solo estado local de una vista.
+
 from datetime import datetime
 import re
 import tkinter as tk

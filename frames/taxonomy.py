@@ -3,6 +3,11 @@ frames/taxonomy.py
 Gestion de categorias y marcas del catalogo.
 """
 
+# Contexto del archivo:
+# Esta pantalla conecta la taxonomia nueva del catalogo con la UI legacy.
+# Administra categorias y marcas desde configuracion y sirve como soporte para
+# que productos pueda evolucionar hacia un catalogo mas estructurado.
+
 import sqlite3
 import tkinter as tk
 from tkinter import messagebox, ttk

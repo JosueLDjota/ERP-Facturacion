@@ -3,6 +3,11 @@ frames/dashboard.py
 Dashboard ejecutivo con KPIs y graficas de negocio.
 """
 
+# Contexto del archivo:
+# El dashboard consolida informacion operativa para lectura gerencial:
+# indicadores de ventas, stock y comportamiento comercial. No es un modulo
+# transaccional, pero sirve como consumidor agregado de datos del sistema.
+
 import tkinter as tk
 from tkinter import ttk
 

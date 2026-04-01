@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+# Contexto del archivo:
+# Caso de uso de autenticacion. Define el contrato de login que consume la UI
+# y traduce estados de negocio (`sin credenciales`, `sin usuarios`,
+# `credenciales invalidas`, `exito`) sin exponer detalles de SQLite.
+
 from dataclasses import dataclass
 
 from erp.data.repositories.user_repository import UserRepository

@@ -10,3 +10,4 @@ class Product:
     precio: float
     stock: int
     proveedor_id: int
+    codigo_producto: Optional[str] = None

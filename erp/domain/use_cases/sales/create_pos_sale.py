@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+# Contexto del archivo:
+# Caso de uso transaccional de venta POS. Valida la venta pendiente, calcula
+# totales, persiste la operacion de forma atomica y devuelve un resultado listo
+# para recibo y refresco visual del POS.
+
 from dataclasses import dataclass
 
 from erp.data.repositories.sale_repository import SaleRepository

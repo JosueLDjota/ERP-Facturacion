@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+# Contexto del archivo:
+# Servicio de dominio que transforma el carrito POS en lineas de recibo y
+# delega el render HTML al adaptador de impresion. Su objetivo es que la UI no
+# construya directamente estructuras de recibo ni dependa del renderer final.
+
 from dataclasses import dataclass
 
-from receipt_builder import build_receipt_html
+from erp.infrastructure.printing.receipt_builder import build_receipt_html
 
 
 @dataclass(slots=True)

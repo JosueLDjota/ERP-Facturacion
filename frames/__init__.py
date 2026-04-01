@@ -1,6 +1,10 @@
 """
-frames/__init__.py
-Hace que frames sea un paquete importable
+Paquete legacy de pantallas Tkinter.
+
+Este namespace sigue agrupando las implementaciones fisicas actuales de la UI.
+Se conserva porque gran parte de la aplicacion todavia instancia frames desde
+esta carpeta, aunque la arquitectura nueva ya expone un namespace organizado en
+`erp.ui.frames`.
 """
 
 from .dashboard import DashboardFrame

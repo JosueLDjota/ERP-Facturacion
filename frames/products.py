@@ -3,10 +3,25 @@ frames/products.py
 Gestion de productos con CRUD e importacion/exportacion.
 """
 
+# Contexto del archivo:
+# Este modulo conserva la interfaz legacy de productos con formularios,
+# buscadores, modal de alta, importacion CSV y ajuste masivo de precios.
+# La validacion y la persistencia importante ya no deberian decidirse aqui:
+# se delegan a servicios, repositorios y casos de uso dentro de `erp/`.
+
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-from .ui import create_modal, format_hnl, normalize_hnl_amount, parse_hnl
+from erp.data.repositories.product_repository import ProductRepository, RepositoryError as ProductRepositoryError
+from erp.data.repositories.supplier_repository import SupplierRepository
+from erp.domain.services.price_adjustment_service import PriceAdjustmentService
+from erp.domain.services.product_validation_service import ProductValidationService
+from erp.domain.use_cases.products.adjust_prices import AdjustPrices
+from erp.domain.use_cases.products.delete_product import DeleteProduct
+from erp.domain.use_cases.products.list_products import ListProducts
+from erp.domain.use_cases.products.save_product import SaveProduct
+from erp.domain.use_cases.products.search_suppliers import SearchSuppliers
+from .ui import create_modal, format_hnl, normalize_hnl_amount
 
 
 class ProductFrame(ttk.Frame):
@@ -21,12 +36,26 @@ class ProductFrame(ttk.Frame):
         self.nombre = tk.StringVar()
         self.precio = tk.StringVar()
         self.stock = tk.StringVar()
+        self.codigo_producto = tk.StringVar()
         self.proveedor_id = tk.StringVar(value="")
         self.proveedor_nombre = tk.StringVar()
         self.search_var = tk.StringVar()
         self.new_product_popup = None
         self.supplier_name_to_id = {}
         self.supplier_id_to_name = {}
+        self.product_repository = ProductRepository(self.db)
+        self.supplier_repository = SupplierRepository(self.db)
+        self.product_validation_service = ProductValidationService()
+        self.price_adjustment_service = PriceAdjustmentService()
+        self.list_products_use_case = ListProducts(self.product_repository)
+        self.save_product_use_case = SaveProduct(
+            self.product_repository,
+            self.supplier_repository,
+            self.product_validation_service,
+        )
+        self.delete_product_use_case = DeleteProduct(self.product_repository)
+        self.search_suppliers_use_case = SearchSuppliers(self.supplier_repository)
+        self.adjust_prices_use_case = AdjustPrices(self.product_repository, self.price_adjustment_service)
 
         self._build_ui()
         self._load_supplier_options()
@@ -139,6 +168,7 @@ class ProductFrame(ttk.Frame):
             ("Nombre:", self.nombre),
             ("Precio (HNL):", self.precio),
             ("Stock:", self.stock),
+            ("Codigo producto:", self.codigo_producto),
         ]
 
         row = 0
@@ -177,7 +207,11 @@ class ProductFrame(ttk.Frame):
     def _render_products(self, products):
         self.tree.delete(*self.tree.get_children())
         for prod in products:
-            prod_id, nombre, precio, stock, proveedor_nombre, _codigo_producto = prod
+            prod_id = int(prod["id"])
+            nombre = prod["nombre"]
+            precio = prod["precio"]
+            stock = prod["stock"]
+            proveedor_nombre = prod["proveedor_nombre"]
             self.tree.insert(
                 "",
                 "end",
@@ -185,36 +219,13 @@ class ProductFrame(ttk.Frame):
                 values=(nombre, format_hnl(precio), stock, proveedor_nombre or "Sin proveedor"),
             )
 
-    def load_products(self):
-        products = self.db.fetch(
-            """
-            SELECT p.id, p.nombre, p.precio, p.stock, COALESCE(pr.nombre, 'Sin proveedor'), COALESCE(p.codigo_producto, '')
-            FROM Productos p
-            LEFT JOIN Proveedores pr ON pr.id = p.proveedor_id
-            ORDER BY p.id DESC
-            """
-        )
+    def load_products(self, search_term=""):
+        products = self.list_products_use_case.execute(search_term)
         self._render_products(products)
 
     def filter_products(self, _event=None):
         search_term = self.search_var.get().strip().lower()
-        if not search_term:
-            self.load_products()
-            return
-
-        products = self.db.fetch(
-            """
-            SELECT p.id, p.nombre, p.precio, p.stock, COALESCE(pr.nombre, 'Sin proveedor'), COALESCE(p.codigo_producto, '')
-            FROM Productos p
-            LEFT JOIN Proveedores pr ON pr.id = p.proveedor_id
-            """
-        )
-        filtered = [
-            prod
-            for prod in products
-            if search_term in str(prod[1]).lower() or search_term in str(prod[5]).lower()
-        ]
-        self._render_products(filtered)
+        self.load_products(search_term)
 
     def select_product(self, _event):
         selected_item = self.tree.focus()
@@ -222,40 +233,40 @@ class ProductFrame(ttk.Frame):
             return
 
         product_id = selected_item
-        full_data = self.db.fetch(
-            "SELECT nombre, precio, stock, descripcion, proveedor_id FROM Productos WHERE id = ?",
-            (product_id,),
-        )
-        if not full_data:
+        data = self.product_repository.get_detail(int(product_id))
+        if not data:
             return
 
-        data = full_data[0]
         self.product_id.set(product_id)
-        self.nombre.set(data[0])
-        self.precio.set(f"{normalize_hnl_amount(data[1]):.2f}")
-        self.stock.set(data[2])
-        self.proveedor_id.set(str(data[4] or ""))
+        self.nombre.set(data["nombre"])
+        self.precio.set(f"{normalize_hnl_amount(data['precio']):.2f}")
+        self.stock.set(data["stock"])
+        self.codigo_producto.set(data["codigo_producto"])
+        self.proveedor_id.set(str(data["proveedor_id"] or ""))
         self.proveedor_nombre.set(self.supplier_id_to_name.get(self.proveedor_id.get(), ""))
 
         self.desc_text.delete("1.0", tk.END)
-        self.desc_text.insert(tk.END, data[3] or "")
+        self.desc_text.insert(tk.END, data["descripcion"] or "")
 
     def reset_form(self):
         self.product_id.set("")
         self.nombre.set("")
         self.precio.set("")
         self.stock.set("")
+        self.codigo_producto.set("")
         self.proveedor_id.set("")
         self._load_supplier_options()
         self.desc_text.delete("1.0", tk.END)
 
     def _load_supplier_options(self):
-        supplier_rows = self.db.fetch("SELECT id, nombre FROM Proveedores ORDER BY nombre")
+        supplier_rows = self.supplier_repository.list_choices()
         self.supplier_name_to_id = {}
         self.supplier_id_to_name = {}
         supplier_labels = []
 
-        for supplier_id, supplier_name in supplier_rows:
+        for supplier in supplier_rows:
+            supplier_id = supplier["id"]
+            supplier_name = supplier["nombre"]
             base_label = str(supplier_name or f"Proveedor {supplier_id}").strip()
             unique_label = base_label
             suffix = 2
@@ -289,113 +300,34 @@ class ProductFrame(ttk.Frame):
         supplier_name = self.proveedor_nombre.get().strip()
         self.proveedor_id.set(self.supplier_name_to_id.get(supplier_name, ""))
 
-    def _validate_codigo_producto(self, codigo_producto, current_product_id=None):
-        codigo_producto = str(codigo_producto or "").strip()
-        if not codigo_producto:
-            return ""
-
-        if not codigo_producto.isdigit():
-            self._show_error("Error", "El codigo de producto solo puede contener numeros.")
-            return None
-
-        if len(codigo_producto) > 13:
-            self._show_error("Error", "El codigo de producto no puede exceder 13 digitos.")
-            return None
-
-        params = [codigo_producto]
-        query = "SELECT id FROM Productos WHERE codigo_producto = ?"
-        if current_product_id not in (None, ""):
-            query += " AND id <> ?"
-            params.append(current_product_id)
-
-        if self.db.fetch(query, tuple(params)):
-            self._show_error("Error", "El codigo de producto ya existe.")
-            return None
-
-        return codigo_producto
-
-    def _validate_product_payload(self, nombre, precio, stock, proveedor_id, codigo_producto="", current_product_id=None):
-        if not all([nombre, precio, stock, proveedor_id]):
-            self._show_error("Error", "Complete todos los campos obligatorios.")
-            return None
+    def save_product(self):
+        if self.product_id.get():
+            action_text = "actualizado"
+        else:
+            action_text = "agregado"
 
         try:
-            precio_val = normalize_hnl_amount(parse_hnl(precio))
-            stock_val = int(stock)
-            prov_id_val = int(proveedor_id)
-        except ValueError:
-            self._show_error("Error", "Precio HNL, stock y proveedor deben ser valores validos.")
-            return None
-
-        if precio_val <= 0:
-            self._show_error("Error", "El precio en HNL debe ser mayor que 0.")
-            return None
-
-        if stock_val < 0:
-            self._show_error("Error", "El stock no puede ser negativo.")
-            return None
-
-        codigo_validado = self._validate_codigo_producto(codigo_producto, current_product_id=current_product_id)
-        if codigo_validado is None:
-            return None
-
-        return precio_val, stock_val, prov_id_val, codigo_validado
-
-    def save_product(self):
-        nombre = self.nombre.get().strip()
-        precio = self.precio.get().strip()
-        stock = self.stock.get().strip()
-        descripcion = self.desc_text.get("1.0", tk.END).strip()
-        proveedor_id = self.proveedor_id.get().strip()
-
-        validated = self._validate_product_payload(
-            nombre,
-            precio,
-            stock,
-            proveedor_id,
-            current_product_id=self.product_id.get(),
-        )
-        if not validated:
+            self.save_product_use_case.execute(
+                nombre=self.nombre.get().strip(),
+                precio=self.precio.get().strip(),
+                stock=self.stock.get().strip(),
+                proveedor_id=self.proveedor_id.get().strip(),
+                descripcion=self.desc_text.get("1.0", tk.END).strip(),
+                codigo_producto=self.codigo_producto.get().strip(),
+                product_id=int(self.product_id.get()) if self.product_id.get() else None,
+            )
+        except (ValueError, ProductRepositoryError) as exc:
+            self._show_error("Error", str(exc))
             return
-        precio_val, stock_val, prov_id_val, _codigo_validado = validated
-
-        if self.product_id.get():
-            self.db.execute(
-                """
-                    UPDATE Productos
-                    SET nombre=?, precio=?, stock=?, descripcion=?, proveedor_id=?
-                    WHERE id=?
-                """,
-                (nombre, precio_val, stock_val, descripcion, prov_id_val, self.product_id.get()),
-            )
-            self._show_info("Exito", "Producto actualizado correctamente.")
-        else:
-            self.db.execute(
-                """
-                    INSERT INTO Productos (nombre, precio, stock, descripcion, proveedor_id)
-                    VALUES (?, ?, ?, ?, ?)
-                """,
-                (nombre, precio_val, stock_val, descripcion, prov_id_val),
-            )
-            self._show_info("Exito", "Producto agregado correctamente.")
 
         self.load_products()
         self.reset_form()
+        self._show_info("Exito", f"Producto {action_text} correctamente.")
 
     def _fetch_supplier_matches(self, search_term="", limit=8):
         """Busca proveedores por coincidencia parcial de nombre."""
-        token = str(search_term or "").strip().lower()
-        query = """
-            SELECT id, nombre
-            FROM Proveedores
-        """
-        params = ()
-        if token:
-            query += " WHERE LOWER(nombre) LIKE ?"
-            params = (f"%{token}%",)
-        query += " ORDER BY nombre LIMIT ?"
-        params = (*params, int(limit))
-        return self.db.fetch(query, params)
+        matches = self.search_suppliers_use_case.execute(search_term, limit=limit)
+        return [(match["id"], match["nombre"]) for match in matches]
 
     def open_new_product_modal(self):
         if self.new_product_popup and self.new_product_popup.winfo_exists():
@@ -517,41 +449,17 @@ class ProductFrame(ttk.Frame):
         refresh_supplier_suggestions()
 
         def submit_new_product():
-            nombre = nombre_var.get().strip()
-            precio = precio_var.get().strip()
-            stock = stock_var.get().strip()
-            proveedor_id = proveedor_var.get().strip()
-            codigo_producto = codigo_producto_var.get().strip()
-            descripcion = desc_text.get("1.0", tk.END).strip()
-
-            validated = self._validate_product_payload(
-                nombre,
-                precio,
-                stock,
-                proveedor_id,
-                codigo_producto=codigo_producto,
-            )
-            if not validated:
-                return
-            precio_val, stock_val, prov_id_val, codigo_validado = validated
-
-            result = self.db.execute(
-                """
-                    INSERT INTO Productos (nombre, precio, stock, descripcion, proveedor_id, codigo_producto)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    nombre,
-                    precio_val,
-                    stock_val,
-                    descripcion,
-                    prov_id_val,
-                    codigo_validado or None,
-                ),
-            )
-            if result is None:
-                error_text = str(self.db.last_error or "No se pudo guardar el producto.")
-                self._show_error("Error", error_text)
+            try:
+                self.save_product_use_case.execute(
+                    nombre=nombre_var.get().strip(),
+                    precio=precio_var.get().strip(),
+                    stock=stock_var.get().strip(),
+                    proveedor_id=proveedor_var.get().strip(),
+                    descripcion=desc_text.get("1.0", tk.END).strip(),
+                    codigo_producto=codigo_producto_var.get().strip(),
+                )
+            except (ValueError, ProductRepositoryError) as exc:
+                self._show_error("Error", str(exc))
                 return
 
             self.load_products()
@@ -608,9 +516,9 @@ class ProductFrame(ttk.Frame):
             row=3, column=0, columnspan=2, sticky="w", pady=(8, 12)
         )
 
-        rows = self.db.fetch("SELECT COUNT(*), COALESCE(AVG(precio), 0) FROM Productos")
-        total_products = int(rows[0][0] or 0) if rows else 0
-        avg_price = float(rows[0][1] or 0) if rows else 0
+        preview = self.adjust_prices_use_case.get_preview()
+        total_products = preview.total_products
+        avg_price = preview.average_price
         preview_var.set(f"Productos a ajustar: {total_products}. Precio promedio actual: {format_hnl(avg_price)}.")
 
         btn_row = ttk.Frame(content, style="Surface.TFrame")
@@ -625,25 +533,17 @@ class ProductFrame(ttk.Frame):
                 self._show_error("Error", "Ingrese valores numericos validos para ajuste y redondeo.")
                 return
 
-            if step <= 0:
-                self._show_error("Error", "El redondeo debe ser mayor que 0.")
+            try:
+                result = self.adjust_prices_use_case.execute(pct=pct, step=step)
+            except (ValueError, ProductRepositoryError) as exc:
+                self._show_error("Error", str(exc))
                 return
-
-            products = self.db.fetch("SELECT id, precio FROM Productos")
-            updated = 0
-            for prod_id, old_price in products:
-                base_price = normalize_hnl_amount(old_price)
-                adjusted_price = base_price * (1 + (pct / 100.0))
-                adjusted_price = round(adjusted_price / step) * step
-                adjusted_price = max(0.01, normalize_hnl_amount(adjusted_price))
-                self.db.execute("UPDATE Productos SET precio = ? WHERE id = ?", (adjusted_price, prod_id))
-                updated += 1
 
             popup.destroy()
             self.load_products()
             self._show_info(
                 "Exito",
-                f"Precios ajustados en {updated} productos.\nAjuste aplicado: {pct:.2f}% | Redondeo: {step:.2f} HNL.",
+                f"Precios ajustados en {result.updated} productos.\nAjuste aplicado: {pct:.2f}% | Redondeo: {step:.2f} HNL.",
             )
 
         ttk.Button(btn_row, text="Cancelar", style="Secondary.TButton", command=popup.destroy).pack(side="right")
@@ -660,7 +560,11 @@ class ProductFrame(ttk.Frame):
         prod_id = selected_item
         product_name = self.tree.item(selected_item, "values")[0]
         if self._ask_yes_no("Confirmar", f"Eliminar el producto \"{product_name}\"?"):
-            self.db.execute("DELETE FROM Productos WHERE id = ?", (prod_id,))
+            try:
+                self.delete_product_use_case.execute(int(prod_id))
+            except ProductRepositoryError as exc:
+                self._show_error("Error", str(exc))
+                return
             self._show_info("Exito", "Producto eliminado.")
             self.load_products()
             self.reset_form()

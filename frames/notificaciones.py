@@ -4,6 +4,11 @@ notificaciones.py
 Sistema de notificaciones push avanzado para ERP....
 """
 
+# Contexto del archivo:
+# Este componente muestra notificaciones internas de login, alertas de stock y
+# mensajes operativos dentro de la aplicacion. Su papel es transversal a la UI
+# y depende del estado de sesion y de consultas periodicas a la base de datos.
+
 import tkinter as tk
 from tkinter import ttk
 from datetime import datetime

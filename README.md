@@ -26,7 +26,13 @@ Este proyecto permite administrar el ciclo comercial basico de un negocio:
 
 ## Arquitectura Del Proyecto
 
-El proyecto combina una UI legacy funcional (`frames/`) con una estructura por capas en `erp/` (dominio, repositorios, validadores y servicios) para evolucionar el sistema sin perder compatibilidad.
+El proyecto combina una UI legacy funcional con una estructura organizada en `erp/` para evolucionar el sistema sin perder compatibilidad:
+
+- `erp/domain/`: reglas de negocio y casos de uso.
+- `erp/data/`: repositorios sobre SQLite.
+- `erp/infrastructure/`: adaptadores de archivos e impresion.
+- `erp/ui/`: namespace organizado de utilidades visuales y entrada futura para frames.
+- `frames/`: capa legacy compatible mientras termina la migracion fisica de UI.
 
 ## Estructura Principal
 
@@ -34,13 +40,22 @@ El proyecto combina una UI legacy funcional (`frames/`) con una estructura por c
 ERP-Facturacion/
   main.py                 # Punto de entrada
   database.py             # DBManager, esquema y consultas SQLite
-  file_manager.py         # Importacion/exportacion CSV
-  receipt_builder.py      # Renderizado de recibos HTML
-  erp/                    # Capa de dominio/repositorios (modular)
-  frames/                 # Modulos UI (Dashboard, POS, Clientes, etc.)
+  file_manager.py         # Wrapper legacy
+  receipt_builder.py      # Wrapper legacy
+  erp/                    # Dominio, datos, infraestructura y UI organizada
+  frames/                 # Modulos UI legacy compatibles
+  docs/                   # Documentacion tecnica y funcional
   tests/                  # Pruebas unitarias e integracion
   erp_profesional.db      # Base de datos local
 ```
+
+## Documentacion
+
+La documentacion tecnica ya no vive dispersa en la raiz.
+
+- [Indice de documentacion](./docs/README.md)
+- [Estado actual y reestructuracion](./docs/architecture/ESTADO_ACTUAL_Y_REESTRUCTURACION_2026-04-01.md)
+- [Plan de refactor progresivo](./docs/architecture/PLAN_REFACTOR_PROGRESIVO.md)
 
 ## Requisitos
 

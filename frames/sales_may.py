@@ -9,7 +9,7 @@ from datetime import datetime
 import random
 import os
 import json
-from receipt_builder import build_receipt_html
+from erp.infrastructure.printing.receipt_builder import build_receipt_html
 
 
 class WholesaleSalesFrame(ttk.Frame):

@@ -1,5 +1,10 @@
 ﻿from __future__ import annotations
 
+# Contexto del archivo:
+# Repositorio de ventas para la arquitectura nueva. Encapsula lecturas del POS,
+# clientes y descuentos, y delega el guardado transaccional de ventas al
+# backend legacy (`DBManager`) mientras el sistema sigue migrando por fases.
+
 from dataclasses import dataclass
 
 from database import DBManager

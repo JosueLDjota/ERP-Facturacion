@@ -1,12 +1,4 @@
-"""
-Wrapper de compatibilidad para utilidades visuales compartidas.
-
-La implementacion primaria ya fue movida a `erp.ui.shared`. Este archivo existe
-solo para no romper imports de la capa `frames/` mientras se completa la
-migracion fisica de la UI.
-"""
-
-from erp.ui.shared import (
+from .shared import (
     FONTS,
     HNL_PREFIX,
     PALETTE,

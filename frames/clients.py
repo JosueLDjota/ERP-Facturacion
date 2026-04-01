@@ -3,6 +3,11 @@ frames/clients.py
 Módulo de gestión de clientes.
 """
 
+# Contexto del archivo:
+# Aqui vive la interfaz legacy de clientes: listado, formulario, filtros,
+# acciones CRUD y utilidades de busqueda. Sigue siendo un modulo importante
+# porque alimenta ventas, historial y relaciones comerciales en la base.
+
 from datetime import datetime
 import csv
 import re

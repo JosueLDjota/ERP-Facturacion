@@ -1,6 +1,13 @@
 """
-database.py - Gestor de Base de Datos SQLite
-Maneja todas las operaciones CRUD y estructura de la base de datos
+Backend legacy principal sobre SQLite.
+
+Este archivo sigue siendo el nucleo operativo historico del sistema: administra
+conexion, esquema, migraciones, datos semilla, transacciones y muchos accesos a
+datos usados por los modulos legacy.
+
+Aunque la arquitectura nueva mueve logica hacia repositorios y casos de uso en
+`erp/`, este modulo se conserva como base estable de produccion y como punto de
+compatibilidad para funcionalidades todavia no desacopladas por completo.
 """
 
 from contextlib import contextmanager

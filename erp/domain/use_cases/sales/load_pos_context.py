@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+# Contexto del archivo:
+# Caso de uso de carga del contexto POS. Reune productos, clientes y descuentos
+# necesarios para poblar la pantalla de ventas sin que la vista consulte SQL
+# directo ni tenga que conocer de donde sale cada dataset.
+
 from dataclasses import dataclass, field
 
 from erp.data.repositories.sale_repository import SaleRepository

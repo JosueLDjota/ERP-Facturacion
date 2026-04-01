@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+# Contexto del archivo:
+# Repositorio minimo de usuarios para autenticacion y chequeos de bootstrap.
+# Funciona como adaptador del login nuevo sobre el backend legacy manejado por
+# `DBManager`, sin mover todavia toda la logica historica de usuarios.
+
 from dataclasses import dataclass
 
 from database import DBManager

@@ -3,6 +3,11 @@ frames/registro.py
 Modulo de consulta de ventas (solo lectura) sincronizado con POS.
 """
 
+# Contexto del archivo:
+# Esta pantalla consulta ventas historicas, exporta resultados y reconstruye
+# recibos para reimpresion. Es importante porque consume informacion generada
+# por el POS y tambien interactua con piezas legacy del registro historico.
+
 import csv
 import tempfile
 import webbrowser
@@ -14,7 +19,7 @@ from tkinter import filedialog, messagebox, ttk
 from tkcalendar import DateEntry
 
 from erp.domain.services.access_control import can_manage_legacy_registry
-from receipt_builder import build_receipt_html
+from erp.infrastructure.printing.receipt_builder import build_receipt_html
 from .ui import create_modal, format_hnl
 
 

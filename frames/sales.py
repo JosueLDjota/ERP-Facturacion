@@ -3,6 +3,13 @@ frames/sales.py
 POS con catalogo, carrito y resumen en un solo panel principal.
 """
 
+# Contexto del archivo:
+# Esta es la pantalla legacy mas sensible del sistema porque implementa la
+# experiencia completa del POS. Aqui viven catalogo, carrito, seleccion de
+# cliente, descuentos, cobro, vista previa y confirmacion visual de venta.
+# La UI sigue en Tkinter, pero la carga de contexto y la persistencia critica
+# ya se apoyan en repositorios y casos de uso de `erp/`.
+
 import random
 import tempfile
 import webbrowser
