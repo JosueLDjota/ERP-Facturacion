@@ -1381,42 +1381,85 @@ class DBManager:
 <head>
     <meta charset="UTF-8">
     <style>
-        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; font-size: 10pt; }
-        .recibo { width: 300px; margin: 0 auto; border: 1px dashed #333; padding: 15px; }
-        h1 { font-size: 16pt; text-align: center; margin: 0 0 10px 0; }
-        .info { text-align: center; margin-bottom: 15px; font-size: 9pt; }
-        .detail { margin-top: 15px; border-top: 1px dashed #ccc; padding-top: 10px; }
-        .item { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 9pt; }
-        .total-section { margin-top: 15px; border-top: 2px solid #333; padding-top: 10px; }
-        .total { font-weight: bold; font-size: 12pt; }
-        .footer { margin-top: 15px; border-top: 1px dashed #ccc; padding-top: 10px; text-align: center; font-size: 8pt; }
+        body {
+            font-family: 'Courier New', Courier, monospace;
+            background: #f4f6f8;
+            margin: 0;
+            padding: 18px;
+            color: #111827;
+        }
+        .receipt {
+            width: 360px;
+            margin: 0 auto;
+            background: #ffffff;
+            border: 1px solid #d1d5db;
+            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+            padding: 18px;
+        }
+        .center { text-align: center; }
+        .title { font-size: 18px; font-weight: bold; letter-spacing: 1px; margin: 10px 0 6px 0; }
+        .muted { color: #4b5563; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        th, td { padding: 4px 2px; border-bottom: 1px dashed #d1d5db; }
+        th { text-align: left; font-weight: bold; }
+        .totals td { border-bottom: none; padding: 2px 0; }
+        .section-title { font-weight: bold; margin: 10px 0 4px 0; }
+        .spacer { margin-top: 10px; }
     </style>
 </head>
 <body>
-    <div class="recibo">
-        <h1>{{NOMBRE_NEGOCIO}}</h1>
-        <div class="info">
-            <p><strong>Venta ID:</strong> {{ID_VENTA}}</p>
-            <p><strong>Fecha:</strong> {{FECHA}}</p>
-        </div>
-        
-        <div class="detail">
-            <div style="font-weight: bold; border-bottom: 1px solid #ccc; padding-bottom: 5px; margin-bottom: 5px;" class="item">
-                <span>Producto</span><span>Cant. / Subtotal</span>
-            </div>
-            <!-- ITEMS_PLACEHOLDER -->
+    <div class="receipt">
+        <div class="center">
+            <div><strong>{{NOMBRE_NEGOCIO}}</strong></div>
+            <div>R.T.N.: {{RTN}}</div>
+            <div>Tel: {{TELEFONO}}</div>
+            <div>{{DIRECCION}}</div>
+            <div>Email: {{EMAIL}}</div>
+            <div class="title">{{DOC_TITLE}}</div>
+            <div>No. 0000-0001-{{ID_VENTA}}</div>
+            <div>Fecha: {{FECHA}}</div>
         </div>
 
-        <div class="total-section">
-            <div class="item total"><span>TOTAL A PAGAR:</span><span>L {{TOTAL}}</span></div>
-            <div class="item"><span>MONTO RECIBIDO:</span><span>L {{MONTO_PAGADO}}</span></div>
-            <div class="item"><span>VUELTO:</span><span>L {{VUELTO}}</span></div>
+        <div class="spacer">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Cant.</th>
+                        <th>Código</th>
+                        <th>Producto</th>
+                        <th>P.Unit</th>
+                        <th>Subtotal</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- ITEMS_PLACEHOLDER -->
+                </tbody>
+            </table>
         </div>
 
-        <div class="footer">
-            <p>¡Gracias por su compra!</p>
-            <p>Vuelva pronto</p>
-        </div>
+        <div class="spacer"><strong>TOTAL:</strong> L {{TOTAL}}</div>
+        <div><strong>{{MONTO_LETRAS}}</strong></div>
+        <div class="spacer">{{ORDER_EXEMPT_LABEL}}</div>
+        <div>{{EXEMPT_REGISTER_LABEL}}</div>
+        <div>{{DISCOUNTS_LABEL}}</div>
+
+        <div class="section-title">Concepto&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Total</div>
+        <table class="totals">
+            <tr><td>Sub Total</td><td style="text-align:right;">L {{SUBTOTAL}}</td></tr>
+            <tr><td>Exento</td><td style="text-align:right;">L {{EXENTO}}</td></tr>
+            <tr><td>Gravado 15%</td><td style="text-align:right;">L {{BASE_GRAVADA_15}}</td></tr>
+            <tr><td>Gravado 18%</td><td style="text-align:right;">L {{BASE_GRAVADA_18}}</td></tr>
+            <tr><td>Impuesto 15%</td><td style="text-align:right;">L {{IMPUESTO_15}}</td></tr>
+            <tr><td>Impuesto 18%</td><td style="text-align:right;">L {{IMPUESTO_18}}</td></tr>
+            <tr><td><strong>TOTAL:</strong></td><td style="text-align:right;"><strong>L {{TOTAL}}</strong></td></tr>
+        </table>
+
+        <div class="spacer">{{LABEL_MONTO_RECIBIDO}}: L {{MONTO_PAGADO}}</div>
+        <div>{{LABEL_VUELTO}}: L {{VUELTO}}</div>
+        <div>{{LABEL_OBSERVACIONES}}: {{OBSERVACIONES}}</div>
+
+        <div class="center spacer">{{COPY_LABEL}}</div>
+        <div class="center">{{THANK_YOU_MESSAGE}}</div>
     </div>
 </body>
 </html>"""

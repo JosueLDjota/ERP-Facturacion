@@ -116,6 +116,32 @@ class Phase1UseCasesTests(unittest.TestCase):
         self.assertEqual(sale_count, 0)
         self.assertEqual(current_stock, original_stock)
 
+    def test_receipt_service_uses_receipt_configuration_from_db(self):
+        self.db.set_config("empresa_nombre", "Mi ERP")
+        self.db.set_config("recibo_doc_title", "RECIBO CENTRAL")
+        self.db.set_config("recibo_template", "<html><body><h1>{{DOC_TITLE}}</h1><div>{{NOMBRE_NEGOCIO}}</div></body></html>")
+        receipt_service = ReceiptService(self.db.get_config)
+
+        html = receipt_service.build_html(
+            venta_id="CFG-001",
+            fecha="2026-04-01 10:00:00",
+            total=10.0,
+            monto_pagado=10.0,
+            vuelto=0.0,
+            cart_data={
+                1: {
+                    "nombre": "Producto demo",
+                    "cantidad": 1,
+                    "precio_unitario": 10.0,
+                    "descuento_porcentaje": 0.0,
+                }
+            },
+            metodo_pago="EFECTIVO",
+        )
+
+        self.assertIn("RECIBO CENTRAL", html)
+        self.assertIn("Mi ERP", html)
+
 
 if __name__ == "__main__":
     unittest.main()

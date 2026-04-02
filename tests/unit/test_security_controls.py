@@ -136,6 +136,7 @@ class AccessControlTests(unittest.TestCase):
     def test_sales_role_keeps_pos_access_but_not_legacy_cleanup(self):
         sections = allowed_sections_for_role("Vendedor")
         self.assertIn("Ventas (POS)", sections)
+        self.assertIn("Ventas Mayoristas", sections)
         self.assertNotIn("Configuración", sections)
         self.assertFalse(can_manage_legacy_registry("Vendedor"))
 

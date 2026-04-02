@@ -33,9 +33,20 @@ class SaleRepository:
     def list_products(self) -> list[dict]:
         rows = self.db.fetch(
             """
-            SELECT id, nombre, descripcion, precio, stock, COALESCE(codigo_producto, '')
+            SELECT
+                p.id,
+                p.nombre,
+                p.descripcion,
+                p.precio,
+                p.stock,
+                COALESCE(p.codigo_producto, ''),
+                COALESCE(c.nombre, ''),
+                COALESCE(m.nombre, '')
             FROM Productos
-            ORDER BY nombre
+            AS p
+            LEFT JOIN Categorias AS c ON c.id = p.categoria_id
+            LEFT JOIN Marcas AS m ON m.id = p.marca_id
+            ORDER BY p.nombre
             """
         )
         return [
@@ -46,6 +57,8 @@ class SaleRepository:
                 "precio": float(row[3] or 0),
                 "stock": int(row[4] or 0),
                 "codigo_producto": str(row[5] or ""),
+                "categoria_nombre": str(row[6] or ""),
+                "marca_nombre": str(row[7] or ""),
             }
             for row in rows
         ]

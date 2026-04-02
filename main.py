@@ -12,9 +12,14 @@ Responsabilidades principales:
 - actuar como composition root de servicios compartidos para la UI.
 """
 
+import sys
+import logging
+import traceback
 from pathlib import Path
+from datetime import datetime
 import tkinter as tk
 from tkinter import messagebox, ttk
+from PIL import Image, ImageTk
 
 from database import DBManager
 from erp.data.repositories.user_repository import UserRepository
@@ -27,76 +32,244 @@ from erp.ui.frames import (
     DashboardFrame,
     ProductFrame,
     RegistroVentasFrame,
+    SalesFrame,
     SupplierFrame,
-    UnifiedPOSFrame,
+    WholesaleSalesFrame,
 )
 from erp.ui.notifications import NotificationManager
-from erp.ui.shared import apply_app_theme, resolve_resource_path
+from erp.ui.shared import PALETTE, apply_app_theme, normalize_theme_name, resolve_resource_path
 
+# Configurar logging profesional
+def setup_logging():
+    """Configura el sistema de logging de la aplicacion."""
+    log_dir = Path(__file__).resolve().parent / "logs"
+    log_dir.mkdir(exist_ok=True)
+    
+    log_file = log_dir / f"erp_{datetime.now().strftime('%Y%m%d')}.log"
+    
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(log_file, encoding='utf-8'),
+            logging.StreamHandler(sys.stdout)
+        ]
+    )
+    return logging.getLogger(__name__)
+
+logger = setup_logging()
+
+class AppConfig:
+    """Configuracion centralizada de la aplicacion."""
+    
+    APP_NAME = "TECH SYSTEMS ERP"
+    APP_VERSION = "2.0.0"
+    APP_COMPANY = "Tech Systems Solutions"
+    MIN_WIDTH = 1200
+    MIN_HEIGHT = 760
+    SIDEBAR_WIDTH = 272
+    
+    # Colores profesionales
+    COLORS = {
+        'primary': '#2c3e50',
+        'secondary': '#3498db',
+        'success': '#27ae60',
+        'danger': '#e74c3c',
+        'warning': '#f39c12',
+        'info': '#3498db',
+        'dark': '#2c3e50',
+        'light': '#ecf0f1',
+        'sidebar_bg': '#1a2634',
+        'topbar_bg': '#ffffff',
+    }
+    
+    # Rutas de recursos
+    ASSETS_DIR = Path(__file__).resolve().parent / "assets"
+    ICON_FILE = ASSETS_DIR / "logo.ico"
+    LOGO_FILE = ASSETS_DIR / "logo.jpg"
+
+class ExceptionHandler:
+    """Manejador global de excepciones para la aplicacion."""
+    
+    def __init__(self, app=None):
+        self.app = app
+        
+    def handle_exception(self, exc_type, exc_value, exc_tb):
+        """Maneja excepciones no capturadas."""
+        error_msg = ''.join(traceback.format_exception(exc_type, exc_value, exc_tb))
+        logger.critical(f"Excepcion no manejada:\n{error_msg}")
+        
+        if self.app:
+            try:
+                messagebox.showerror(
+                    "Error Critico",
+                    f"Ha ocurrido un error inesperado.\n\n{exc_value}\n\n"
+                    "El error ha sido registrado en el archivo de logs.\n"
+                    "Por favor, contacte al soporte tecnico.",
+                    parent=self.app
+                )
+            except:
+                pass
+        
+        # Cerrar la aplicacion de manera controlada
+        if self.app:
+            try:
+                self.app.on_closing()
+            except:
+                pass
+        sys.exit(1)
 
 class ERPApp(tk.Tk):
     """Aplicacion principal del sistema ERP."""
 
     def __init__(self):
-        super().__init__()
+        try:
+            super().__init__()
+            logger.info("Iniciando aplicacion ERP...")
+            
+            # Configurar manejador de excepciones
+            self.exception_handler = ExceptionHandler(self)
+            sys.excepthook = self.exception_handler.handle_exception
+            
+            # Configurar ventana principal
+            self.title(f"{AppConfig.APP_NAME} v{AppConfig.APP_VERSION}")
+            self.state("zoomed")
+            self.minsize(AppConfig.MIN_WIDTH, AppConfig.MIN_HEIGHT)
+            self.base_dir = Path(__file__).resolve().parent
+            
+            # Inicializar componentes
+            self._init_components()
+            
+            # Aplicar tema y configuracion
+            self.current_theme = self.db.get_config("ui_theme", "light") or "light"
+            self.style = apply_app_theme(self, self.current_theme)
+            self._setup_window_icon()
+            
+            # Mostrar pantalla de login
+            self.show_login()
+            
+            logger.info("Aplicacion inicializada correctamente")
+            
+        except Exception as e:
+            logger.critical(f"Error al inicializar la aplicacion: {e}")
+            messagebox.showerror(
+                "Error de Inicializacion",
+                f"No se pudo iniciar la aplicacion.\n\nError: {e}\n\n"
+                "Revise el archivo de logs para mas detalles."
+            )
+            sys.exit(1)
 
-        self.title("TECH SISTEMS ERP")
-        self.geometry("1440x920")
-        self.minsize(1200, 760)
-        self.base_dir = Path(__file__).resolve().parent
-
-        self.db = DBManager()
-        self.user_repository = UserRepository(self.db)
-        self.login_user = LoginUser(self.user_repository)
-        self.file_manager = FileManager(self.db)
-        self.notification_manager = NotificationManager(self, self.db)
-        self.current_user = None
-        self.allowed_sections = set()
-        self.nav_widgets = {}
-        self.current_section = tk.StringVar(value="Dashboard")
-
-        self.style = apply_app_theme(self)
-        self._setup_window_icon()
-        self.show_login()
+    def _init_components(self):
+        """Inicializa todos los componentes de la aplicacion."""
+        try:
+            self.db = DBManager()
+            self.user_repository = UserRepository(self.db)
+            self.login_user = LoginUser(self.user_repository)
+            self.file_manager = FileManager(self.db)
+            self.notification_manager = NotificationManager(self, self.db)
+            self.current_user = None
+            self.allowed_sections = set()
+            self.nav_widgets = {}
+            self.current_section = tk.StringVar(value="Dashboard")
+            self._session_start_time = datetime.now()
+            self._stock_monitor_job = None
+            self._detached_windows = {}
+            
+            # Variables de estado
+            self._is_logged_in = False
+            self._is_closing = False
+            
+        except Exception as e:
+            logger.error(f"Error al inicializar componentes: {e}")
+            raise
 
     def _setup_window_icon(self):
-        icon_candidates = [
-            resolve_resource_path("assets", "icons", "app.ico"),
-            resolve_resource_path("assets", "app.ico"),
-            self.base_dir / "app.ico",
-        ]
-        for icon_path in icon_candidates:
-            if icon_path.exists():
+        """Configura el icono de la ventana."""
+        if AppConfig.ICON_FILE.exists():
+            try:
+                self.iconbitmap(default=str(AppConfig.ICON_FILE))
+                logger.debug("Icono de ventana cargado correctamente")
+            except Exception as e:
+                logger.warning(f"No se pudo cargar el icono: {e}")
+
+    def apply_ui_theme(self, theme_name, *, persist=False):
+        """Aplica el tema seleccionado a toda la aplicación en tiempo real."""
+        normalized_theme = normalize_theme_name(theme_name)
+        self.current_theme = normalized_theme
+        self.style = apply_app_theme(self, normalized_theme)
+        if persist:
+            self.db.set_config("ui_theme", normalized_theme)
+
+        for window in list(self._detached_windows.values()):
+            if window and window.winfo_exists():
+                apply_app_theme(window, normalized_theme)
                 try:
-                    self.iconbitmap(default=str(icon_path))
-                except Exception:
+                    window.configure(bg=PALETTE["blue_soft"])
+                except tk.TclError:
                     pass
-                break
 
     def show_login(self):
-        self.login_frame = ttk.Frame(self, style="App.TFrame")
-        self.login_frame.pack(fill="both", expand=True, padx=40, pady=36)
-        self.login_frame.columnconfigure(0, weight=1)
-        self.login_frame.columnconfigure(1, weight=1)
-        self.login_frame.rowconfigure(0, weight=1)
+        """Muestra la pantalla de inicio de sesion."""
+        try:
+            self.login_frame = ttk.Frame(self, style="App.TFrame")
+            self.login_frame.pack(fill="both", expand=True, padx=40, pady=36)
+            self.login_frame.columnconfigure(0, weight=1)
+            self.login_frame.columnconfigure(1, weight=1)
+            self.login_frame.rowconfigure(0, weight=1)
 
-        intro = ttk.Frame(self.login_frame, padding=36, style="AltSurface.TFrame")
-        intro.grid(row=0, column=0, sticky="nsew", padx=(0, 14))
-        intro.columnconfigure(0, weight=1)
-        intro.rowconfigure(3, weight=1)
+            # Panel izquierdo con informacion
+            intro = ttk.Frame(self.login_frame, padding=36, style="AltSurface.TFrame")
+            intro.grid(row=0, column=0, sticky="nsew", padx=(0, 14))
+            intro.columnconfigure(0, weight=1)
+            intro.rowconfigure(4, weight=1)
 
-        ttk.Label(intro, text="TECH SISTEMS ERP", style="IntroTitle.TLabel").grid(row=0, column=0, sticky="w")
+            # Logo de la empresa
+            self._load_company_logo(intro)
+            
+            # Panel derecho con formulario de login
+            login_container = self._create_login_form()
+            
+            # Configurar atajos de teclado
+            self.password_entry.bind("<Return>", lambda _event: self.authenticate())
+            self.username_entry.focus_set()
+            
+            logger.info("Pantalla de login mostrada")
+            
+        except Exception as e:
+            logger.error(f"Error al mostrar login: {e}")
+            raise
+
+    def _load_company_logo(self, parent):
+        """Carga y muestra el logo de la empresa."""
+        row_index = 0
+        if AppConfig.LOGO_FILE.exists():
+            try:
+                logo_image = Image.open(AppConfig.LOGO_FILE)
+                logo_image = logo_image.resize((200, 200), Image.Resampling.LANCZOS)
+                logo_photo = ImageTk.PhotoImage(logo_image)
+                logo_label = ttk.Label(parent, image=logo_photo)
+                logo_label.image = logo_photo
+                logo_label.grid(row=row_index, column=0, sticky="w", pady=(0, 10))
+                row_index += 1
+            except Exception as e:
+                logger.warning(f"No se pudo cargar el logo: {e}")
+        
+        ttk.Label(parent, text=AppConfig.APP_NAME, style="IntroTitle.TLabel").grid(
+            row=row_index, column=0, sticky="w"
+        )
         ttk.Label(
-            intro,
+            parent,
             text="Gestion comercial y punto de venta en una sola plataforma.",
             style="IntroBody.TLabel",
-        ).grid(row=1, column=0, sticky="w", pady=(10, 12))
+        ).grid(row=row_index + 1, column=0, sticky="w", pady=(10, 12))
         ttk.Label(
-            intro,
+            parent,
             text="Accede para administrar ventas, inventario, clientes y reportes.",
             style="IntroMuted.TLabel",
-        ).grid(row=2, column=0, sticky="w")
+        ).grid(row=row_index + 2, column=0, sticky="w")
 
+    def _create_login_form(self):
+        """Crea el formulario de inicio de sesion."""
         login_container = ttk.LabelFrame(
             self.login_frame,
             text="Acceso al sistema",
@@ -119,8 +292,22 @@ class ERPApp(tk.Tk):
         self.username_entry.grid(row=1, column=0, sticky="ew", pady=(4, 12))
 
         ttk.Label(fields, text="Contrasena", style="FormLabel.TLabel").grid(row=2, column=0, sticky="w")
-        self.password_entry = ttk.Entry(fields, show="*", width=30)
-        self.password_entry.grid(row=3, column=0, sticky="ew", pady=(4, 18))
+        password_row = ttk.Frame(fields, style="Surface.TFrame")
+        password_row.grid(row=3, column=0, sticky="ew", pady=(4, 18))
+        password_row.columnconfigure(0, weight=1)
+
+        self._password_visible = False
+        self.password_entry = ttk.Entry(password_row, show="*", width=30)
+        self.password_entry.grid(row=0, column=0, sticky="ew")
+
+        self.password_toggle_button = ttk.Button(
+            password_row,
+            text="👁",
+            width=3,
+            style="Secondary.TButton",
+            command=self.toggle_password_visibility,
+        )
+        self.password_toggle_button.grid(row=0, column=1, padx=(8, 0))
 
         self.login_button = ttk.Button(
             login_container,
@@ -130,202 +317,535 @@ class ERPApp(tk.Tk):
         )
         self.login_button.grid(row=2, column=0, sticky="ew")
 
+        # Mensaje informativo
+        info_text = "Presione Enter para confirmar el acceso.\nCredenciales seguras con cifrado."
         ttk.Label(
             login_container,
-            text="Sugerencia: Enter confirma el acceso. Las credenciales ya no se rellenan automaticamente.",
+            text=info_text,
             style="Muted.TLabel",
         ).grid(row=3, column=0, sticky="w", pady=(14, 0))
 
+        self.login_status_var = tk.StringVar(value="Listo para iniciar sesión.")
+        self.login_status_label = ttk.Label(
+            login_container,
+            textvariable=self.login_status_var,
+            style="Muted.TLabel",
+            wraplength=360,
+        )
+        self.login_status_label.grid(row=4, column=0, sticky="w", pady=(10, 0))
+
+        self.login_progress = ttk.Progressbar(login_container, mode="indeterminate")
+        self.login_progress.grid(row=5, column=0, sticky="ew", pady=(10, 0))
+        self.login_progress.grid_remove()
+
+        # Verificar si hay usuarios registrados
         if not self.user_repository.has_users():
             ttk.Label(
                 login_container,
-                text="No hay usuarios registrados en esta base. Cree uno antes de iniciar sesion.",
+                text="No hay usuarios registrados en esta base.\nCree uno antes de iniciar sesion.",
                 style="Muted.TLabel",
                 wraplength=360,
-            ).grid(row=4, column=0, sticky="w", pady=(10, 0))
+            ).grid(row=6, column=0, sticky="w", pady=(10, 0))
             self.login_button.state(["disabled"])
+            logger.warning("No hay usuarios registrados en la base de datos")
 
-        self.password_entry.bind("<Return>", lambda _event: self.authenticate())
-        self.username_entry.focus_set()
+        return login_container
+
+    def toggle_password_visibility(self):
+        """Alterna entre mostrar y ocultar la contraseña en el login."""
+        self._password_visible = not self._password_visible
+        self.password_entry.configure(show="" if self._password_visible else "*")
+        self.password_toggle_button.configure(text="🙈" if self._password_visible else "👁")
+
+    def _set_login_loading(self, is_loading, status_text=None):
+        """Activa o desactiva el estado visual de carga del login."""
+        if status_text is not None and hasattr(self, "login_status_var"):
+            self.login_status_var.set(status_text)
+
+        if is_loading:
+            self.login_button.state(["disabled"])
+            self.username_entry.state(["disabled"])
+            self.password_entry.state(["disabled"])
+            self.password_toggle_button.state(["disabled"])
+            self.login_progress.grid()
+            self.login_progress.start(12)
+        else:
+            if self.user_repository.has_users():
+                self.login_button.state(["!disabled"])
+            self.username_entry.state(["!disabled"])
+            self.password_entry.state(["!disabled"])
+            self.password_toggle_button.state(["!disabled"])
+            self.login_progress.stop()
+            self.login_progress.grid_remove()
 
     def authenticate(self):
-        username = self.username_entry.get().strip()
-        password = self.password_entry.get()
-        response = self.login_user.execute(username, password)
+        """Autentica al usuario en el sistema con feedback visual de carga."""
+        self._set_login_loading(True, "Verificando credenciales...")
+        self.after(350, self._perform_authentication)
 
-        if response.status == "missing_credentials":
-            messagebox.showwarning(
-                "Datos incompletos",
-                response.message,
-                parent=self,
-            )
-            return
+    def _perform_authentication(self):
+        """Ejecuta la autenticación real después de mostrar el estado de carga."""
+        try:
+            username = self.username_entry.get().strip()
+            password = self.password_entry.get()
+            
+            logger.info(f"Intento de autenticacion para usuario: {username}")
+            
+            response = self.login_user.execute(username, password)
 
-        if response.status == "missing_users":
+            if response.status == "missing_credentials":
+                self._set_login_loading(False, response.message or "Complete usuario y contraseña.")
+                messagebox.showwarning(
+                    "Datos incompletos",
+                    response.message,
+                    parent=self,
+                )
+                return
+
+            if response.status == "missing_users":
+                self._set_login_loading(False, response.message or "No hay usuarios registrados.")
+                messagebox.showerror(
+                    "Sin usuarios",
+                    response.message,
+                    parent=self,
+                )
+                return
+
+            if response.ok:
+                self.login_status_var.set("Acceso correcto. Cargando el sistema...")
+                self.current_user = response.user
+                self.allowed_sections = allowed_sections_for_role(self.current_user[2])
+                self._is_logged_in = True
+                
+                logger.info(f"Usuario autenticado: {username} (Rol: {self.current_user[2]})")
+                
+                self.login_frame.destroy()
+                self.notification_manager.notify_login(self.current_user[1], self.current_user[2])
+                self.show_main_interface()
+                return
+
+            self._set_login_loading(False, response.message or "Usuario o contraseña incorrectos.")
+            logger.warning(f"Intento de autenticacion fallido para: {username}")
             messagebox.showerror(
-                "Sin usuarios",
-                response.message,
-                parent=self,
+                "Error de Autenticacion",
+                response.message or "Usuario o contrasena incorrectos",
+                parent=self
             )
-            return
-
-        if response.ok:
-            self.current_user = response.user
-            self.allowed_sections = allowed_sections_for_role(self.current_user[2])
-            self.login_frame.destroy()
-            self.notification_manager.notify_login(self.current_user[1], self.current_user[2])
-            self.show_main_interface()
-            return
-
-        messagebox.showerror("Error", response.message or "Usuario o contrasena incorrectos", parent=self)
+            
+        except Exception as e:
+            self._set_login_loading(False, "Ocurrió un error al validar el acceso.")
+            logger.error(f"Error durante autenticacion: {e}")
+            messagebox.showerror(
+                "Error",
+                "Ocurrio un error durante la autenticacion.\nRevise el archivo de logs.",
+                parent=self
+            )
 
     def show_main_interface(self):
-        self.container = ttk.Frame(self, style="App.TFrame")
-        self.container.pack(fill="both", expand=True)
-        self.container.columnconfigure(1, weight=1)
-        self.container.rowconfigure(0, weight=1)
+        """Muestra la interfaz principal de la aplicacion."""
+        try:
+            logger.info("Mostrando interfaz principal")
+            
+            self.container = ttk.Frame(self, style="App.TFrame")
+            self.container.pack(fill="both", expand=True)
+            self.container.columnconfigure(1, weight=1)
+            self.container.rowconfigure(0, weight=1)
 
-        self.nav_frame = ttk.Frame(self.container, width=272, padding=18, style="Sidebar.TFrame")
-        self.nav_frame.grid(row=0, column=0, sticky="ns")
-        self.nav_frame.grid_propagate(False)
-        self.nav_frame.columnconfigure(0, weight=1)
+            # Barra lateral
+            self.nav_frame = ttk.Frame(
+                self.container,
+                width=AppConfig.SIDEBAR_WIDTH,
+                padding=18,
+                style="Sidebar.TFrame"
+            )
+            self.nav_frame.grid(row=0, column=0, sticky="ns")
+            self.nav_frame.grid_propagate(False)
+            self.nav_frame.columnconfigure(0, weight=1)
 
-        content_shell = ttk.Frame(self.container, style="App.TFrame")
-        content_shell.grid(row=0, column=1, sticky="nsew")
-        content_shell.rowconfigure(1, weight=1)
-        content_shell.columnconfigure(0, weight=1)
+            # Area de contenido
+            content_shell = ttk.Frame(self.container, style="App.TFrame")
+            content_shell.grid(row=0, column=1, sticky="nsew")
+            content_shell.rowconfigure(1, weight=1)
+            content_shell.columnconfigure(0, weight=1)
 
-        topbar = ttk.Frame(content_shell, padding=(24, 18, 24, 12), style="Topbar.TFrame")
-        topbar.grid(row=0, column=0, sticky="ew")
-        topbar.columnconfigure(0, weight=1)
+            # Barra superior
+            topbar = ttk.Frame(content_shell, padding=(24, 18, 24, 12), style="Topbar.TFrame")
+            topbar.grid(row=0, column=0, sticky="ew")
+            topbar.columnconfigure(0, weight=1)
 
-        ttk.Label(topbar, text="Panel principal", style="Subheader.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Label(topbar, textvariable=self.current_section, style="Muted.TLabel").grid(row=1, column=0, sticky="w")
-        ttk.Button(
-            topbar,
-            text="Notificaciones",
-            command=self.notification_manager.show_notification_center,
-            style="Secondary.TButton",
-        ).grid(row=0, column=1, rowspan=2, sticky="e")
+            ttk.Label(topbar, text="Panel principal", style="Subheader.TLabel").grid(
+                row=0, column=0, sticky="w"
+            )
+            ttk.Label(topbar, textvariable=self.current_section, style="Muted.TLabel").grid(
+                row=1, column=0, sticky="w"
+            )
+            
+            # Boton de notificaciones
+            ttk.Button(
+                topbar,
+                text="🔔",
+                width=4,
+                command=self.notification_manager.show_notification_center,
+                style="Secondary.TButton",
+            ).grid(row=0, column=1, rowspan=2, sticky="e")
 
-        self.content_frame = ttk.Frame(content_shell, padding=(24, 14, 24, 24), style="App.TFrame")
-        self.content_frame.grid(row=1, column=0, sticky="nsew")
-        self.content_frame.rowconfigure(0, weight=1)
-        self.content_frame.columnconfigure(0, weight=1)
+            # Frame de contenido
+            self.content_frame = ttk.Frame(
+                content_shell,
+                padding=(24, 14, 24, 24),
+                style="App.TFrame"
+            )
+            self.content_frame.grid(row=1, column=0, sticky="nsew")
+            self.content_frame.rowconfigure(0, weight=1)
+            self.content_frame.columnconfigure(0, weight=1)
 
-        self._build_sidebar()
+            self._build_sidebar()
+
+            # Iniciar verificacion periodica de stock
+            self._start_stock_monitoring()
+            
+            self.notification_manager.notify_system_info(f"v{AppConfig.APP_VERSION}")
+            self._on_nav_click("Dashboard")
+            
+        except Exception as e:
+            logger.error(f"Error al mostrar interfaz principal: {e}")
+            raise
+
+    def _start_stock_monitoring(self):
+        """Inicia el monitoreo periodico de stock."""
+        self._stop_stock_monitoring()
 
         def check_stock_periodically():
-            self.notification_manager.check_stock_alerts()
-            self.after(300000, check_stock_periodically)
+            self._stock_monitor_job = None
+            try:
+                self.notification_manager.check_stock_alerts()
+                if self._is_logged_in and not self._is_closing:
+                    self._stock_monitor_job = self.after(300000, check_stock_periodically)  # 5 minutos
+            except Exception as e:
+                logger.error(f"Error en monitoreo de stock: {e}")
+                if self._is_logged_in and not self._is_closing:
+                    self._stock_monitor_job = self.after(300000, check_stock_periodically)
 
         check_stock_periodically()
-        self.notification_manager.notify_system_info("v1.1.0")
-        self._on_nav_click("Dashboard")
+
+    def _stop_stock_monitoring(self):
+        """Detiene el monitoreo periódico de stock cuando ya no aplica."""
+        if self._stock_monitor_job is None:
+            return
+        try:
+            self.after_cancel(self._stock_monitor_job)
+        except Exception:
+            pass
+        self._stock_monitor_job = None
 
     def _build_sidebar(self):
-        ttk.Label(self.nav_frame, text="TECH SISTEMS ERP", style="SidebarTitle.TLabel").grid(
-            row=0, column=0, sticky="w", pady=(4, 2)
-        )
-        ttk.Label(self.nav_frame, text=f"Usuario: {self.current_user[1]}", style="SidebarText.TLabel").grid(
-            row=1, column=0, sticky="w"
-        )
-        ttk.Label(self.nav_frame, text=f"Rol: {self.current_user[2]}", style="SidebarText.TLabel").grid(
-            row=2, column=0, sticky="w", pady=(0, 14)
-        )
-
-        separator = tk.Frame(self.nav_frame, height=1, bg="#1E3358")
-        separator.grid(row=3, column=0, sticky="ew", pady=(4, 12))
-
-        class NotificationsFrame(ttk.Frame):
-            def __init__(self, parent, app):
-                super().__init__(parent)
-                ttk.Label(self, text="Centro de Notificaciones", style="Subheader.TLabel").pack(pady=20)
-
-        self.frames = {
-            "Dashboard": DashboardFrame,
-            "Ventas (POS)": UnifiedPOSFrame,
-            "Registro de Ventas": RegistroVentasFrame,
-            "Clientes": ClientsFrame,
-            "Productos": ProductFrame,
-            "Proveedores": SupplierFrame,
-            "Configuración": ConfigFrame,
-            "Notificaciones": NotificationsFrame,
-        }
-
-        nav_order = [
-            "Dashboard",
-            "Ventas (POS)",
-            "Registro de Ventas",
-            "Clientes",
-            "Productos",
-            "Proveedores",
-            "Configuración",
-        ]
-
-        nav_host = ttk.Frame(self.nav_frame, style="Sidebar.TFrame")
-        nav_host.grid(row=4, column=0, sticky="nsew")
-        nav_host.columnconfigure(0, weight=1)
-        self.nav_frame.rowconfigure(4, weight=1)
-
-        visible_sections = [section for section in nav_order if section in self.allowed_sections]
-
-        for idx, section in enumerate(visible_sections):
-            button = ttk.Button(
-                nav_host,
-                text=section,
-                style="Nav.TButton",
-                command=lambda value=section: self._on_nav_click(value),
+        """Construye la barra lateral de navegacion."""
+        try:
+            # Informacion del usuario
+            ttk.Label(self.nav_frame, text=AppConfig.APP_NAME, style="SidebarTitle.TLabel").grid(
+                row=0, column=0, sticky="w", pady=(4, 2)
             )
-            button.grid(row=idx, column=0, sticky="ew", pady=4)
-            self.nav_widgets[section] = button
+            ttk.Label(self.nav_frame, text=f"Usuario: {self.current_user[1]}", style="SidebarText.TLabel").grid(
+                row=1, column=0, sticky="w"
+            )
+            ttk.Label(self.nav_frame, text=f"Rol: {self.current_user[2]}", style="SidebarText.TLabel").grid(
+                row=2, column=0, sticky="w", pady=(0, 14)
+            )
 
-        bottom = ttk.Frame(self.nav_frame, style="Sidebar.TFrame")
-        bottom.grid(row=5, column=0, sticky="ew", pady=(14, 10))
-        ttk.Button(bottom, text="Cerrar sesion", command=self.logout, style="Danger.TButton").pack(fill="x")
+            # Separador
+            separator = tk.Frame(self.nav_frame, height=1, bg="#1E3358")
+            separator.grid(row=3, column=0, sticky="ew", pady=(4, 12))
+
+            # Definicion de frames
+            class NotificationsFrame(ttk.Frame):
+                def __init__(self, parent, app):
+                    super().__init__(parent)
+                    ttk.Label(self, text="Centro de Notificaciones", style="Subheader.TLabel").pack(pady=20)
+
+            self.frames = {
+                "Dashboard": DashboardFrame,
+                "Ventas (POS)": SalesFrame,
+                "Registro de Ventas": RegistroVentasFrame,
+                "Clientes": ClientsFrame,
+                "Productos": ProductFrame,
+                "Proveedores": SupplierFrame,
+                "Configuración": ConfigFrame,
+                "Notificaciones": NotificationsFrame,
+            }
+
+            nav_order = [
+                "Dashboard",
+                "Ventas (POS)",
+                "Registro de Ventas",
+                "Clientes",
+                "Productos",
+                "Proveedores",
+                "Configuración",
+            ]
+
+            nav_host = ttk.Frame(self.nav_frame, style="Sidebar.TFrame")
+            nav_host.grid(row=4, column=0, sticky="nsew")
+            nav_host.columnconfigure(0, weight=1)
+            self.nav_frame.rowconfigure(4, weight=1)
+
+            visible_sections = [section for section in nav_order if section in self.allowed_sections]
+
+            for idx, section in enumerate(visible_sections):
+                button = ttk.Button(
+                    nav_host,
+                    text=section,
+                    style="Nav.TButton",
+                    command=lambda value=section: self._on_nav_click(value),
+                )
+                button.grid(row=idx, column=0, sticky="ew", pady=4)
+                self.nav_widgets[section] = button
+
+            # Boton de cierre de sesion
+            bottom = ttk.Frame(self.nav_frame, style="Sidebar.TFrame")
+            bottom.grid(row=5, column=0, sticky="ew", pady=(14, 10))
+            ttk.Button(bottom, text="Cerrar sesion", command=self.logout, style="Danger.TButton").pack(fill="x")
+            
+            logger.debug(f"Barra lateral construida con {len(visible_sections)} secciones")
+            
+        except Exception as e:
+            logger.error(f"Error al construir barra lateral: {e}")
+            raise
 
     def _on_nav_click(self, title):
-        if not can_access_section(self.current_user[2], title):
-            messagebox.showwarning(
-                "Acceso restringido",
-                "Su rol no tiene permisos para acceder a este modulo.",
-                parent=self,
+        """Maneja los clics en los botones de navegacion."""
+        try:
+            if not can_access_section(self.current_user[2], title):
+                messagebox.showwarning(
+                    "Acceso restringido",
+                    "Su rol no tiene permisos para acceder a este modulo.",
+                    parent=self,
+                )
+                return
+            
+            frame_class = self.frames[title]
+            self.current_section.set(title)
+            self._set_active_nav(title)
+
+            if title in {"Ventas (POS)", "Ventas Mayoristas"}:
+                self.open_detached_sales_window(title, frame_class)
+                logger.debug(f"Navegacion desacoplada a: {title}")
+                return
+
+            self.show_frame(frame_class, title)
+            
+            logger.debug(f"Navegacion a: {title}")
+            
+        except Exception as e:
+            logger.error(f"Error en navegacion a {title}: {e}")
+            messagebox.showerror(
+                "Error",
+                f"No se pudo cargar el modulo {title}.\nError: {e}",
+                parent=self
             )
+
+    def _set_active_nav(self, selected_title):
+        """Resalta el boton de navegacion activo."""
+        for title, widget in self.nav_widgets.items():
+            widget.configure(style="NavAccent.TButton" if title == selected_title else "Nav.TButton")
+
+    def open_detached_sales_window(self, title, frame_class):
+        """Abre o reutiliza una ventana dedicada para ventas."""
+        existing = self._detached_windows.get(title)
+        if existing and existing.winfo_exists():
+            existing.deiconify()
+            existing.lift()
+            existing.focus_force()
+            self._show_detached_window_placeholder(title)
             return
+
+        window = tk.Toplevel(self)
+        window.title(f"{AppConfig.APP_NAME} | {title}")
+        window.configure(bg=PALETTE["blue_soft"])
+        window.state("zoomed")
+        window.minsize(1240, 780)
+        window.protocol("WM_DELETE_WINDOW", lambda current=title: self._close_detached_window(current, redirect_to_dashboard=True))
+        self._detached_windows[title] = window
+        apply_app_theme(window, self.current_theme)
+
+        shell = ttk.Frame(window, style="App.TFrame", padding=(18, 18, 18, 18))
+        shell.pack(fill="both", expand=True)
+        shell.columnconfigure(0, weight=1)
+        shell.rowconfigure(1, weight=1)
+
+        header = ttk.Frame(shell, style="Topbar.TFrame", padding=(18, 16, 18, 16))
+        header.grid(row=0, column=0, sticky="ew", pady=(0, 12))
+        header.columnconfigure(0, weight=1)
+
+        ttk.Label(header, text=title, style="Subheader.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            header,
+            text="Ventana operativa dedicada. La barra de Windows permanece visible y la lógica central de ventas no cambia.",
+            style="Muted.TLabel",
+            wraplength=860,
+        ).grid(row=1, column=0, sticky="w", pady=(4, 0))
+        ttk.Button(header, text="Cerrar ventana", command=lambda current=title: self._close_detached_window(current, redirect_to_dashboard=True), style="Secondary.TButton").grid(
+            row=0, column=1, rowspan=2, sticky="e"
+        )
+
+        body = ttk.Frame(shell, style="App.TFrame")
+        body.grid(row=1, column=0, sticky="nsew")
+        body.columnconfigure(0, weight=1)
+        body.rowconfigure(0, weight=1)
+
+        frame = frame_class(body, self)
+        frame.grid(row=0, column=0, sticky="nsew")
+
+        self._show_detached_window_placeholder(title)
+
+    def _show_detached_window_placeholder(self, title):
+        """Muestra una tarjeta de estado en el panel principal cuando la sección vive en otra ventana."""
+        for widget in self.content_frame.winfo_children():
+            widget.destroy()
+
+        card = ttk.LabelFrame(self.content_frame, text=title, padding=24, style="Card.TLabelframe")
+        card.grid(row=0, column=0, sticky="nsew")
+        card.columnconfigure(0, weight=1)
+
+        ttk.Label(card, text=f"{title} se ejecuta en una ventana dedicada.", style="Subheader.TLabel").grid(
+            row=0, column=0, sticky="w"
+        )
+        ttk.Label(
+            card,
+            text="Use el botón inferior para traer la ventana al frente. Esta separación mejora el espacio operativo sin mover la lógica de ventas, recibos ni cobro fuera de su flujo actual.",
+            style="Muted.TLabel",
+            wraplength=760,
+        ).grid(row=1, column=0, sticky="w", pady=(8, 18))
+        ttk.Button(
+            card,
+            text="Abrir o enfocar ventana",
+            style="Primary.TButton",
+            command=lambda current=title: self._focus_detached_window(current),
+        ).grid(row=2, column=0, sticky="w")
+
+    def _focus_detached_window(self, title):
+        window = self._detached_windows.get(title)
+        if window and window.winfo_exists():
+            window.deiconify()
+            window.lift()
+            window.focus_force()
+
+    def _close_detached_window(self, title, *, redirect_to_dashboard=False):
+        window = self._detached_windows.pop(title, None)
+        if window and window.winfo_exists():
+            window.destroy()
+        if redirect_to_dashboard and self._is_logged_in and hasattr(self, "content_frame") and self.content_frame.winfo_exists():
+            self.current_section.set("Dashboard")
+            self._set_active_nav("Dashboard")
+            self.show_frame(self.frames["Dashboard"], "Dashboard")
+            self.deiconify()
+            self.lift()
+            self.focus_force()
+
+    def _close_detached_windows(self):
+        for title in list(self._detached_windows.keys()):
+            self._close_detached_window(title, redirect_to_dashboard=False)
+
+    def show_frame(self, frame_class, title):
+        """Muestra un frame especifico en el area de contenido."""
+        try:
+            for widget in self.content_frame.winfo_children():
+                widget.destroy()
+
+            frame = frame_class(self.content_frame, self)
+            frame.grid(row=0, column=0, sticky="nsew")
+            self.current_frame = frame
+            
+        except Exception as e:
+            logger.error(f"Error al mostrar frame {title}: {e}")
+            raise
+
+    def open_product_editor(self, product_id):
+        """Navega al módulo de productos y enfoca un producto específico para edición."""
+        title = "Productos"
         frame_class = self.frames[title]
         self.current_section.set(title)
         self._set_active_nav(title)
         self.show_frame(frame_class, title)
 
-    def _set_active_nav(self, selected_title):
-        for title, widget in self.nav_widgets.items():
-            widget.configure(style="NavAccent.TButton" if title == selected_title else "Nav.TButton")
-
-    def show_frame(self, frame_class, title):
-        for widget in self.content_frame.winfo_children():
-            widget.destroy()
-
-        frame = frame_class(self.content_frame, self)
-        frame.grid(row=0, column=0, sticky="nsew")
+        frame = getattr(self, "current_frame", None)
+        if frame and hasattr(frame, "focus_product"):
+            frame.focus_product(product_id)
 
     def logout(self):
-        if messagebox.askyesno("Cerrar sesion", "Desea cerrar sesion?", parent=self):
-            self.container.destroy()
-            self.current_user = None
-            self.allowed_sections.clear()
-            self.nav_widgets.clear()
-            self.show_login()
+        """Cierra la sesion actual."""
+        try:
+            if messagebox.askyesno("Cerrar sesion", "Desea cerrar sesion?", parent=self):
+                logger.info(f"Usuario {self.current_user[1]} cerro sesion")
+                self._is_logged_in = False
+                self._stop_stock_monitoring()
+                self._close_detached_windows()
+                self.container.destroy()
+                self.current_user = None
+                self.allowed_sections.clear()
+                self.nav_widgets.clear()
+                self.show_login()
+                
+        except Exception as e:
+            logger.error(f"Error durante logout: {e}")
 
     def on_closing(self):
-        if messagebox.askokcancel("Salir", "Desea salir del sistema?", parent=self):
-            self.db.close()
+        """Maneja el cierre de la aplicacion."""
+        if self._is_closing:
+            return
+            
+        self._is_closing = True
+        
+        try:
+            if messagebox.askokcancel("Salir", "Desea salir del sistema?", parent=self):
+                logger.info(f"Aplicacion cerrada por el usuario")
+                
+                # Registrar tiempo de sesion
+                if self._is_logged_in:
+                    session_duration = datetime.now() - self._session_start_time
+                    logger.info(f"Duracion de sesion: {session_duration}")
+
+                self._stop_stock_monitoring()
+                self._close_detached_windows()
+
+                if hasattr(self, 'notification_manager'):
+                    self.notification_manager.shutdown()
+                
+                # Cerrar conexiones
+                if hasattr(self, 'db'):
+                    self.db.close()
+                    logger.debug("Conexion a base de datos cerrada")
+                
+                self.destroy()
+                return
+
+            self._is_closing = False
+                
+        except Exception as e:
+            logger.error(f"Error al cerrar aplicacion: {e}")
             self.destroy()
 
 
 def main():
-    app = ERPApp()
-    app.protocol("WM_DELETE_WINDOW", app.on_closing)
-    app.mainloop()
+    """Punto de entrada principal de la aplicacion."""
+    try:
+        logger.info("=" * 60)
+        logger.info(f"Iniciando {AppConfig.APP_NAME} v{AppConfig.APP_VERSION}")
+        logger.info(f"Compañia: {AppConfig.APP_COMPANY}")
+        logger.info("=" * 60)
+        
+        app = ERPApp()
+        app.protocol("WM_DELETE_WINDOW", app.on_closing)
+        app.mainloop()
+        
+    except Exception as e:
+        logger.critical(f"Error fatal en la aplicacion: {e}")
+        logger.critical(traceback.format_exc())
+        messagebox.showerror(
+            "Error Fatal",
+            f"No se pudo iniciar la aplicacion.\n\nError: {e}\n\n"
+            "Revise el archivo de logs para mas detalles."
+        )
+        sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -447,6 +447,11 @@ class ProductFrame(ttk.Frame):
             return
         if not self._require_selection(self.marca_id.get(), label="marca"):
             return
+        if self.product_id.get() and not self._ask_yes_no(
+            "Confirmar cambios",
+            "¿Estás seguro de los cambios que harás en este producto?",
+        ):
+            return
 
         try:
             self.save_product_use_case.execute(
@@ -467,6 +472,24 @@ class ProductFrame(ttk.Frame):
         self.load_products()
         self.reset_form()
         self._show_info("Exito", f"Producto {action_text} correctamente.")
+
+    def focus_product(self, product_id):
+        """Carga y enfoca un producto concreto dentro del listado para edición rápida."""
+        product_key = str(product_id or "").strip()
+        if not product_key:
+            return
+
+        self.search_var.set("")
+        self.load_products()
+
+        if not self.tree.exists(product_key):
+            self._show_warning("Producto no encontrado", "No se pudo ubicar el producto solicitado.")
+            return
+
+        self.tree.selection_set(product_key)
+        self.tree.focus(product_key)
+        self.tree.see(product_key)
+        self.select_product(None)
 
     def _fetch_supplier_matches(self, search_term="", limit=8):
         """Busca proveedores por coincidencia parcial de nombre."""

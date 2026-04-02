@@ -6,12 +6,19 @@ from __future__ import annotations
 # construya directamente estructuras de recibo ni dependa del renderer final.
 
 from dataclasses import dataclass
+from typing import Callable
 
-from erp.infrastructure.printing.receipt_builder import build_receipt_html
+from erp.infrastructure.printing.receipt_builder import (
+    build_receipt_html,
+    build_receipt_preview_text,
+    load_receipt_render_settings,
+)
 
 
 @dataclass(slots=True)
 class ReceiptService:
+    config_getter: Callable | None = None
+
     def build_receipt_items(self, cart_data: dict) -> list[dict]:
         items = []
         for raw_product_id, item in (cart_data or {}).items():
@@ -51,6 +58,7 @@ class ReceiptService:
         number_to_words=None,
         tax_included: bool = True,
     ) -> str:
+        render_settings = load_receipt_render_settings(self.config_getter)
         return build_receipt_html(
             venta_id=venta_id,
             fecha=fecha,
@@ -61,6 +69,40 @@ class ReceiptService:
             cliente=cliente,
             metodo_pago=metodo_pago,
             mode=mode,
+            empresa=render_settings["empresa"],
             number_to_words=number_to_words,
             tax_included=tax_included,
+            template_html=render_settings["template_html"],
+            labels=render_settings["labels"],
+            observaciones=render_settings["observaciones"],
+        )
+
+    def build_preview_text(
+        self,
+        *,
+        venta_id: str,
+        fecha: str,
+        cart_data: dict,
+        cliente: dict | None = None,
+        metodo_pago: str = "NO_DEFINIDO",
+        mode: str = "ticket",
+        number_to_words=None,
+        tax_included: bool = True,
+        amount_received: float | None = None,
+    ) -> str:
+        render_settings = load_receipt_render_settings(self.config_getter)
+        return build_receipt_preview_text(
+            venta_id=venta_id,
+            fecha=fecha,
+            items=self.build_receipt_items(cart_data),
+            cliente=cliente,
+            metodo_pago=metodo_pago,
+            mode=mode,
+            empresa=render_settings["empresa"],
+            number_to_words=number_to_words,
+            tax_included=tax_included,
+            template_text=render_settings["template_html"],
+            labels=render_settings["labels"],
+            observaciones=render_settings["observaciones"],
+            amount_received=amount_received,
         )

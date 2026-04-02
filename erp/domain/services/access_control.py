@@ -7,6 +7,7 @@ INVENTORY_SECTIONS = {"Productos", "Proveedores"}
 BASE_SECTIONS = {
     "Dashboard",
     "Ventas (POS)",
+    "Ventas Mayoristas",
     "Registro de Ventas",
     "Clientes",
     "Notificaciones",

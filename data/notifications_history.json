@@ -1,0 +1,1010 @@
+[
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 23:30",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T23:30:23.357425",
+    "read": false,
+    "last_displayed_at": "2026-04-01T23:30:23.357407"
+  },
+  {
+    "id": 2,
+    "notification_key": "sale:V-20260401232116",
+    "title": "Venta Completada",
+    "message": "Venta #V-20260401232116\nTotal: $301.69\nCliente: Aguilar Lopez, Fernanda",
+    "type": "sale",
+    "type_config": {
+      "name": "sale",
+      "title": "Venta",
+      "bg_color": "#2ecc71",
+      "fg_color": "#ffffff",
+      "icon": "💰",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T23:21:22.838127",
+    "read": false,
+    "last_displayed_at": "2026-04-01T23:21:22.838121"
+  },
+  {
+    "id": 1,
+    "notification_key": "sale:V-20260401230855",
+    "title": "Venta Completada",
+    "message": "Venta #V-20260401230855\nTotal: $995.94\nCliente: Aguilar Lopez, Fernanda",
+    "type": "sale",
+    "type_config": {
+      "name": "sale",
+      "title": "Venta",
+      "bg_color": "#2ecc71",
+      "fg_color": "#ffffff",
+      "icon": "💰",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T23:09:09.427411",
+    "read": false,
+    "last_displayed_at": "2026-04-01T23:09:09.427396"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 23:04",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T23:04:15.461711",
+    "read": false,
+    "last_displayed_at": "2026-04-01T23:04:15.461693"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 22:58",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T22:58:16.337221",
+    "read": false,
+    "last_displayed_at": "2026-04-01T22:58:16.337210"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 22:47",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T22:47:26.362908",
+    "read": false,
+    "last_displayed_at": "2026-04-01T22:47:26.362895"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 22:46",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T22:46:04.905641",
+    "read": false,
+    "last_displayed_at": "2026-04-01T22:46:04.905630"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 22:44",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T22:44:14.899087",
+    "read": false,
+    "last_displayed_at": "2026-04-01T22:44:14.899075"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 22:41",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T22:41:10.476481",
+    "read": false,
+    "last_displayed_at": "2026-04-01T22:41:10.476468"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 22:38",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T22:38:18.471219",
+    "read": false,
+    "last_displayed_at": "2026-04-01T22:38:18.471207"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 22:35",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T22:35:35.330144",
+    "read": false,
+    "last_displayed_at": "2026-04-01T22:35:35.330125"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 22:29",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T22:29:39.050609",
+    "read": false,
+    "last_displayed_at": "2026-04-01T22:29:39.050597"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 22:21",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T22:21:52.858425",
+    "read": false,
+    "last_displayed_at": "2026-04-01T22:21:52.858406"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 22:20",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T22:20:51.235383",
+    "read": false,
+    "last_displayed_at": "2026-04-01T22:20:51.235366"
+  },
+  {
+    "id": 1,
+    "notification_key": "login:Administrador:2026-04-01 22:14",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T22:14:39.953462",
+    "read": false,
+    "last_displayed_at": "2026-04-01T22:14:39.953447"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 22:12",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T22:12:44.761377",
+    "read": false,
+    "last_displayed_at": "2026-04-01T22:12:44.761352"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 22:03",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T22:03:25.084462",
+    "read": false,
+    "last_displayed_at": "2026-04-01T22:03:25.084447"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 21:55",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T21:55:41.252628",
+    "read": false,
+    "last_displayed_at": "2026-04-01T21:55:41.252607"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 21:53",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T21:53:55.931265",
+    "read": false,
+    "last_displayed_at": "2026-04-01T21:53:55.931248"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 21:35",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T21:35:08.135931",
+    "read": false,
+    "last_displayed_at": "2026-04-01T21:35:08.135921"
+  },
+  {
+    "id": 1,
+    "notification_key": "sale:V-20260401213333",
+    "title": "Venta Completada",
+    "message": "Venta #V-20260401213333\nTotal: $312.58\nCliente: Cruz Martinez, Miguel",
+    "type": "sale",
+    "type_config": {
+      "name": "sale",
+      "title": "Venta",
+      "bg_color": "#2ecc71",
+      "fg_color": "#ffffff",
+      "icon": "💰",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T21:33:39.460101",
+    "read": false,
+    "last_displayed_at": "2026-04-01T21:33:39.460083"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 21:32",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T21:32:00.630886",
+    "read": false,
+    "last_displayed_at": "2026-04-01T21:32:00.630875"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 21:24",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T21:24:27.362753",
+    "read": false,
+    "last_displayed_at": "2026-04-01T21:24:27.362742"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 21:09",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T21:09:53.166292",
+    "read": false,
+    "last_displayed_at": "2026-04-01T21:09:53.166274"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 19:23",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T19:23:33.384000",
+    "read": false,
+    "last_displayed_at": "2026-04-01T19:23:33.383987"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 19:12",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T19:12:32.875964",
+    "read": false,
+    "last_displayed_at": "2026-04-01T19:12:32.875951"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 19:06",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T19:06:07.307870",
+    "read": false,
+    "last_displayed_at": "2026-04-01T19:06:07.307857"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 19:04",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T19:04:41.569016",
+    "read": false,
+    "last_displayed_at": "2026-04-01T19:04:41.569003"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 19:01",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T19:01:36.396284",
+    "read": false,
+    "last_displayed_at": "2026-04-01T19:01:36.396270"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 19:00",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T19:00:01.843016",
+    "read": false,
+    "last_displayed_at": "2026-04-01T19:00:01.843005"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 18:58",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T18:58:05.200726",
+    "read": false,
+    "last_displayed_at": "2026-04-01T18:58:05.200715"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 18:49",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T18:49:55.440427",
+    "read": false,
+    "last_displayed_at": "2026-04-01T18:49:55.440416"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 18:39",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T18:39:15.455371",
+    "read": false,
+    "last_displayed_at": "2026-04-01T18:39:15.455358"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 18:36",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T18:36:27.692664",
+    "read": false,
+    "last_displayed_at": "2026-04-01T18:36:27.692653"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 18:29",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T18:29:09.675594",
+    "read": false,
+    "last_displayed_at": "2026-04-01T18:29:09.675582"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 18:19",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T18:19:23.411627",
+    "read": false,
+    "last_displayed_at": "2026-04-01T18:19:23.411614"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 18:17",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T18:17:16.495888",
+    "read": false,
+    "last_displayed_at": "2026-04-01T18:17:16.495875"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 18:03",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T18:03:32.920082",
+    "read": false,
+    "last_displayed_at": "2026-04-01T18:03:32.920070"
+  },
+  {
+    "id": 1,
+    "notification_key": "sale:V-20260401175457-527",
+    "title": "Venta Completada",
+    "message": "Venta #V-20260401175457-527\nTotal: $1,734.82",
+    "type": "sale",
+    "type_config": {
+      "name": "sale",
+      "title": "Venta",
+      "bg_color": "#2ecc71",
+      "fg_color": "#ffffff",
+      "icon": "💰",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T17:55:01.068532",
+    "read": true,
+    "last_displayed_at": "2026-04-01T17:55:01.068519"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 17:53",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T17:53:18.453594",
+    "read": false,
+    "last_displayed_at": "2026-04-01T17:53:18.453583"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 17:46",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T17:46:20.227211",
+    "read": false,
+    "last_displayed_at": "2026-04-01T17:46:20.227198"
+  },
+  {
+    "id": 1,
+    "notification_key": "login:Administrador:2026-04-01 17:45",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T17:45:31.751925",
+    "read": false,
+    "last_displayed_at": "2026-04-01T17:45:31.751914"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 17:40",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T17:40:00.061945",
+    "read": false,
+    "last_displayed_at": "2026-04-01T17:40:00.061935"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 17:34",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T17:34:17.799969",
+    "read": false,
+    "last_displayed_at": "2026-04-01T17:34:17.799958"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 17:31",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T17:31:33.083900",
+    "read": false,
+    "last_displayed_at": "2026-04-01T17:31:33.083889"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 17:22",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T17:22:41.506432",
+    "read": false,
+    "last_displayed_at": "2026-04-01T17:22:41.506410"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 17:07",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T17:07:58.525863",
+    "read": false,
+    "last_displayed_at": "2026-04-01T17:07:58.525845"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 16:56",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T16:56:30.711748",
+    "read": false,
+    "last_displayed_at": "2026-04-01T16:56:30.711733"
+  },
+  {
+    "id": 1,
+    "notification_key": "login:Administrador:2026-04-01 16:33",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T16:33:03.300493",
+    "read": false,
+    "last_displayed_at": "2026-04-01T16:33:43.042683"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 16:32",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T16:32:32.678862",
+    "read": false,
+    "last_displayed_at": "2026-04-01T16:32:32.678848"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 16:25",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T16:25:23.444178",
+    "read": false,
+    "last_displayed_at": "2026-04-01T16:25:58.049392"
+  },
+  {
+    "id": 1,
+    "notification_key": "system:info:081a733a64b58c69f742f6c543d081b5",
+    "title": "Sistema",
+    "message": "v2.0.0",
+    "type": "info",
+    "type_config": {
+      "name": "info",
+      "title": "Información",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "ℹ️",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T16:25:23.460840",
+    "read": false,
+    "last_displayed_at": "2026-04-01T16:25:23.460832"
+  },
+  {
+    "id": 0,
+    "notification_key": "login:Administrador:2026-04-01 16:21",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T16:21:23.276421",
+    "read": false,
+    "last_displayed_at": "2026-04-01T16:21:23.276409"
+  },
+  {
+    "id": 3,
+    "notification_key": "login:Administrador:2026-04-01 16:12",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T16:12:22.448506",
+    "read": false,
+    "last_displayed_at": "2026-04-01T16:12:22.448497"
+  },
+  {
+    "id": 2,
+    "notification_key": "login:Administrador:2026-04-01 16:11",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "type_config": {
+      "name": "login",
+      "title": "Acceso",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "👤",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T16:11:46.587422",
+    "read": false,
+    "last_displayed_at": "2026-04-01T16:11:46.587418"
+  },
+  {
+    "id": 1,
+    "notification_key": "system:info:8a4fa81ecaa75f4ef61fca35e5dd0472",
+    "title": "Sistema",
+    "message": "v1.1.0",
+    "type": "info",
+    "type_config": {
+      "name": "info",
+      "title": "Información",
+      "bg_color": "#3498db",
+      "fg_color": "#ffffff",
+      "icon": "ℹ️",
+      "sound": null
+    },
+    "timestamp": "2026-04-01T16:10:51.104253",
+    "read": false,
+    "last_displayed_at": "2026-04-01T16:10:51.104243"
+  }
+]

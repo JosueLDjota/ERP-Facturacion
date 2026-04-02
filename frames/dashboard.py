@@ -49,6 +49,7 @@ class DashboardFrame(ttk.Frame):
         self.total_products = 0
         self.ventas_por_mes = []
         self.ventas_por_dia = []
+        self.recent_sales = []
 
         self.month_canvas = None
         self.daily_canvas = None
@@ -102,6 +103,11 @@ class DashboardFrame(ttk.Frame):
             background=PALETTE["white"],
             foreground=PALETTE["blue_dark"],
             font=("Segoe UI Semibold", 12),
+        )
+        style.configure(
+            "DashAction.TButton",
+            font=("Segoe UI Semibold", 9),
+            padding=(10, 6),
         )
 
     def _build_layout(self):
@@ -162,7 +168,7 @@ class DashboardFrame(ttk.Frame):
         self.daily_chart_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 10))
 
         self.stock_panel = ttk.LabelFrame(self.panels, text="Alertas de stock bajo", style="DashPanel.TLabelframe")
-        self.stock_panel.grid(row=0, column=1, rowspan=2, sticky="nsew")
+        self.stock_panel.grid(row=0, column=1, sticky="nsew", pady=(0, 10))
         self.stock_panel.columnconfigure(0, weight=1)
         self.stock_panel.rowconfigure(1, weight=1)
 
@@ -176,17 +182,69 @@ class DashboardFrame(ttk.Frame):
         stock_table_host.columnconfigure(0, weight=1)
         stock_table_host.rowconfigure(0, weight=1)
 
-        self.stock_tree = ttk.Treeview(stock_table_host, columns=("Producto", "Stock"), show="headings", height=18)
+        self.stock_tree = ttk.Treeview(
+            stock_table_host,
+            columns=("Producto", "Stock", "Accion"),
+            show="headings",
+            height=10,
+        )
         self.stock_tree.heading("Producto", text="Producto")
         self.stock_tree.heading("Stock", text="Stock")
+        self.stock_tree.heading("Accion", text="Acción")
         self.stock_tree.column("Producto", width=340, anchor="w")
         self.stock_tree.column("Stock", width=110, anchor="center")
+        self.stock_tree.column("Accion", width=140, anchor="center")
 
         stock_scroll = ttk.Scrollbar(stock_table_host, orient="vertical", command=self.stock_tree.yview)
         self.stock_tree.configure(yscrollcommand=stock_scroll.set)
 
         self.stock_tree.grid(row=0, column=0, sticky="nsew")
         stock_scroll.grid(row=0, column=1, sticky="ns")
+        self.stock_tree.bind("<Double-1>", self._open_selected_stock_product)
+
+        stock_actions = ttk.Frame(self.stock_panel, style="Surface.TFrame")
+        stock_actions.grid(row=2, column=0, sticky="ew", pady=(10, 0))
+        ttk.Button(
+            stock_actions,
+            text="Editar producto seleccionado",
+            style="DashAction.TButton",
+            command=self._open_selected_stock_product,
+        ).pack(side="left")
+
+        self.recent_panel = ttk.LabelFrame(self.panels, text="5 ventas más recientes", style="DashPanel.TLabelframe")
+        self.recent_panel.grid(row=1, column=1, sticky="nsew")
+        self.recent_panel.columnconfigure(0, weight=1)
+        self.recent_panel.rowconfigure(1, weight=1)
+
+        self.recent_count_var = tk.StringVar(value="Sin ventas recientes")
+        ttk.Label(self.recent_panel, textvariable=self.recent_count_var, style="Muted.TLabel").grid(
+            row=0, column=0, sticky="w", pady=(0, 8)
+        )
+
+        recent_host = ttk.Frame(self.recent_panel, style="Surface.TFrame")
+        recent_host.grid(row=1, column=0, sticky="nsew")
+        recent_host.columnconfigure(0, weight=1)
+        recent_host.rowconfigure(0, weight=1)
+
+        self.recent_tree = ttk.Treeview(
+            recent_host,
+            columns=("Venta", "Fecha", "Metodo", "Total"),
+            show="headings",
+            height=5,
+        )
+        for col, width, anchor in (
+            ("Venta", 120, "center"),
+            ("Fecha", 150, "w"),
+            ("Metodo", 120, "center"),
+            ("Total", 120, "e"),
+        ):
+            self.recent_tree.heading(col, text=col)
+            self.recent_tree.column(col, width=width, anchor=anchor)
+
+        recent_scroll = ttk.Scrollbar(recent_host, orient="vertical", command=self.recent_tree.yview)
+        self.recent_tree.configure(yscrollcommand=recent_scroll.set)
+        self.recent_tree.grid(row=0, column=0, sticky="nsew")
+        recent_scroll.grid(row=0, column=1, sticky="ns")
 
     def _bind_mousewheel(self, _event=None):
         self.scroll_canvas.bind_all("<MouseWheel>", self._on_mousewheel)
@@ -241,14 +299,25 @@ class DashboardFrame(ttk.Frame):
             labels.append(f"{self.MONTH_LABELS.get(month, month)} {year[2:]}")
             totals.append(float(total or 0))
 
-        fig = Figure(figsize=(9.0, 3.6), dpi=100)
+        fig = self._create_figure((9.0, 3.6))
         ax = fig.add_subplot(111)
-        ax.bar(labels, totals, color="#2563EB", alpha=0.9)
+        bars = ax.bar(labels, totals, color=PALETTE["blue_primary"], alpha=0.9, width=0.6)
+        ax.set_title("Evolución de ventas por mes", color=PALETTE["blue_dark"], fontsize=12, pad=12)
         ax.set_xlabel("Mes")
         ax.set_ylabel("Monto (HNL)")
         ax.yaxis.set_major_formatter(FuncFormatter(lambda x, _pos: f"L {x:,.0f}"))
         ax.tick_params(axis="x", rotation=20)
-        ax.grid(axis="y", linestyle="--", alpha=0.25)
+        ax.grid(axis="y", linestyle="--", alpha=0.25, color=PALETTE["gray_border"])
+        for bar, total in zip(bars, totals):
+            ax.text(
+                bar.get_x() + (bar.get_width() / 2),
+                bar.get_height(),
+                f"L {total:,.0f}",
+                ha="center",
+                va="bottom",
+                fontsize=8,
+                color=PALETTE["gray_text"],
+            )
         fig.tight_layout()
 
         self.month_canvas = FigureCanvasTkAgg(fig, master=self.month_chart_frame)
@@ -266,13 +335,15 @@ class DashboardFrame(ttk.Frame):
         days = [d for d, _ in self.ventas_por_dia]
         totals = [float(v or 0) for _, v in self.ventas_por_dia]
 
-        fig = Figure(figsize=(9.0, 3.6), dpi=100)
+        fig = self._create_figure((9.0, 3.6))
         ax = fig.add_subplot(111)
-        ax.plot(days, totals, marker="o", linewidth=2.5, color="#0F766E")
+        ax.fill_between(days, totals, color=PALETTE["blue_light"], alpha=0.35)
+        ax.plot(days, totals, marker="o", linewidth=2.8, color=PALETTE["success"])
+        ax.set_title("Comportamiento diario del mes actual", color=PALETTE["blue_dark"], fontsize=12, pad=12)
         ax.set_xlabel("Dia")
         ax.set_ylabel("Monto (HNL)")
         ax.yaxis.set_major_formatter(FuncFormatter(lambda x, _pos: f"L {x:,.0f}"))
-        ax.grid(axis="y", linestyle="--", alpha=0.25)
+        ax.grid(axis="y", linestyle="--", alpha=0.25, color=PALETTE["gray_border"])
         fig.tight_layout()
 
         self.daily_canvas = FigureCanvasTkAgg(fig, master=self.daily_chart_frame)
@@ -282,10 +353,41 @@ class DashboardFrame(ttk.Frame):
     def _render_stock_table(self):
         self.stock_tree.delete(*self.stock_tree.get_children())
 
-        for nombre, stock in self.low_stock:
-            self.stock_tree.insert("", "end", values=(nombre, int(stock or 0)))
+        for product_id, nombre, stock in self.low_stock:
+            self.stock_tree.insert(
+                "",
+                "end",
+                iid=str(product_id),
+                values=(nombre, int(stock or 0), "Editar producto"),
+            )
 
         self.stock_count_var.set(f"{len(self.low_stock)} productos en alerta")
+
+    def _render_recent_sales(self):
+        self.recent_tree.delete(*self.recent_tree.get_children())
+        for sale_id, fecha, metodo_pago, total in self.recent_sales:
+            self.recent_tree.insert(
+                "",
+                "end",
+                values=(
+                    sale_id,
+                    str(fecha or ""),
+                    str(metodo_pago or "NO_DEFINIDO"),
+                    format_hnl(float(total or 0)),
+                ),
+            )
+        self.recent_count_var.set(f"{len(self.recent_sales)} ventas recientes visibles")
+
+    def _open_selected_stock_product(self, _event=None):
+        selected = self.stock_tree.focus()
+        if not selected:
+            return
+        if hasattr(self.app, "open_product_editor"):
+            self.app.open_product_editor(selected)
+
+    def _create_figure(self, size):
+        fig = Figure(figsize=size, dpi=100, facecolor=PALETTE["white"])
+        return fig
 
     def _load_data(self):
         self.total_sales = float(self.db.fetch("SELECT COALESCE(SUM(total), 0) FROM Ventas")[0][0] or 0)
@@ -301,7 +403,7 @@ class DashboardFrame(ttk.Frame):
         )
 
         self.low_stock = self.db.fetch(
-            "SELECT nombre, stock FROM Productos WHERE stock <= 10 ORDER BY stock ASC, nombre ASC"
+            "SELECT id, nombre, stock FROM Productos WHERE stock <= 10 ORDER BY stock ASC, nombre ASC"
         )
 
         best_seller_data = self.db.fetch(
@@ -338,9 +440,19 @@ class DashboardFrame(ttk.Frame):
             """
         )
 
+        self.recent_sales = self.db.fetch(
+            """
+            SELECT id, fecha, metodo_pago, total
+            FROM Ventas
+            ORDER BY datetime(fecha) DESC, id DESC
+            LIMIT 5
+            """
+        )
+
     def refresh_dashboard(self):
         self._load_data()
         self._render_kpis()
         self._draw_month_chart()
         self._draw_daily_chart()
         self._render_stock_table()
+        self._render_recent_sales()

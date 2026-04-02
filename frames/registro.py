@@ -19,7 +19,7 @@ from tkinter import filedialog, messagebox, ttk
 from tkcalendar import DateEntry
 
 from erp.domain.services.access_control import can_manage_legacy_registry
-from erp.infrastructure.printing.receipt_builder import build_receipt_html
+from erp.infrastructure.printing.receipt_builder import build_receipt_html, load_receipt_render_settings
 from .ui import create_modal, format_hnl
 
 
@@ -549,6 +549,7 @@ class RegistroVentasFrame(ttk.Frame):
             self._show_error("Sin detalle", "La venta no tiene detalle de productos.")
             return
 
+        render_settings = load_receipt_render_settings(self.app.db.get_config)
         html = build_receipt_html(
             venta_id=sale["venta_id"],
             fecha=sale["fecha"],
@@ -559,7 +560,11 @@ class RegistroVentasFrame(ttk.Frame):
             cliente=sale["cliente"],
             metodo_pago=sale.get("metodo_pago", "NO_DEFINIDO"),
             mode="ticket",
+            empresa=render_settings["empresa"],
             tax_included=self._invoice_prices_include_tax(),
+            template_html=render_settings["template_html"],
+            labels=render_settings["labels"],
+            observaciones=render_settings["observaciones"],
         )
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False, encoding="utf-8") as temp_file:
