@@ -184,5 +184,49 @@
     "reminder_seconds": null,
     "display_count": 1,
     "history_saved": true
+  },
+  "login:Administrador:2026-03-31 01:35": {
+    "key": "login:Administrador:2026-03-31 01:35",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "last_shown_at": "2026-03-31T01:35:02.164548",
+    "last_hash": "1abb62d039170986f7ae75387bb647aa",
+    "reminder_seconds": null,
+    "display_count": 1,
+    "history_saved": true
+  },
+  "login:Administrador:2026-03-31 01:40": {
+    "key": "login:Administrador:2026-03-31 01:40",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "last_shown_at": "2026-03-31T01:40:06.500512",
+    "last_hash": "1abb62d039170986f7ae75387bb647aa",
+    "reminder_seconds": null,
+    "display_count": 1,
+    "history_saved": true
+  },
+  "login:Administrador:2026-03-31 01:41": {
+    "key": "login:Administrador:2026-03-31 01:41",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "last_shown_at": "2026-03-31T01:41:16.888976",
+    "last_hash": "1abb62d039170986f7ae75387bb647aa",
+    "reminder_seconds": null,
+    "display_count": 1,
+    "history_saved": true
+  },
+  "login:Administrador:2026-03-31 22:21": {
+    "key": "login:Administrador:2026-03-31 22:21",
+    "title": "Inicio de Sesión",
+    "message": "Usuario: Administrador\nRol: Administrador\nIP: 127.0.0.1",
+    "type": "login",
+    "last_shown_at": "2026-03-31T22:21:18.045472",
+    "last_hash": "1abb62d039170986f7ae75387bb647aa",
+    "reminder_seconds": null,
+    "display_count": 1,
+    "history_saved": true
   }
 }
