@@ -1193,3 +1193,7 @@ KeyboardInterrupt
 2026-04-02 22:48:03,335 - matplotlib.category - INFO - Using categorical units to plot a list of strings that are all parsable as floats or dates. If these strings should be plotted as numbers, cast to the appropriate data type before plotting.
 2026-04-02 22:48:03,337 - matplotlib.category - INFO - Using categorical units to plot a list of strings that are all parsable as floats or dates. If these strings should be plotted as numbers, cast to the appropriate data type before plotting.
 2026-04-02 22:48:03,338 - matplotlib.category - INFO - Using categorical units to plot a list of strings that are all parsable as floats or dates. If these strings should be plotted as numbers, cast to the appropriate data type before plotting.
+2026-04-02 22:51:51,081 - __main__ - INFO - Respaldo automatico generado al finalizar sesion: backup_erp_auto_2026-04-02_22-51-50.zip
+2026-04-02 22:51:51,081 - __main__ - INFO - Usuario Administrador cerro sesion
+2026-04-02 22:51:51,180 - __main__ - INFO - Pantalla de login mostrada
+2026-04-02 22:54:10,801 - __main__ - INFO - Aplicacion cerrada por el usuario
