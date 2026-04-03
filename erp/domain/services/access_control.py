@@ -57,3 +57,8 @@ def can_access_section(role, section):
 def can_manage_legacy_registry(role):
     """Solo administracion puede depurar tablas legacy."""
     return has_admin_access(role)
+
+
+def can_manage_backups(role):
+    """Solo administracion puede restaurar o configurar respaldos sensibles."""
+    return has_admin_access(role)

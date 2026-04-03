@@ -1,4 +1,4 @@
-"""
+﻿"""
 frames/clients.py
 Módulo de gestión de clientes.
 """
@@ -41,14 +41,11 @@ class ClientsFrame(ttk.Frame):
 
     def _build_ui(self):
         self.columnconfigure(0, weight=1)
-        self.rowconfigure(1, weight=1)
+        self.rowconfigure(0, weight=1)
 
-        ttk.Label(self, text="Gestión de clientes", style="Header.TLabel").grid(
-            row=0, column=0, sticky="w", pady=(0, 14)
-        )
 
         main = ttk.Frame(self, style="App.TFrame")
-        main.grid(row=1, column=0, sticky="nsew")
+        main.grid(row=0, column=0, sticky="nsew")
         main.columnconfigure(0, weight=5)
         main.columnconfigure(1, weight=7)
         main.rowconfigure(0, weight=1)
@@ -74,9 +71,12 @@ class ClientsFrame(ttk.Frame):
             ttk.Label(form_card, text=f"{label}:", style="FormLabel.TLabel").grid(
                 row=row, column=0, sticky="w", padx=4, pady=6
             )
-            ttk.Entry(form_card, textvariable=var).grid(
+            entry = ttk.Entry(form_card, textvariable=var)
+            entry.grid(
                 row=row, column=1, columnspan=2, sticky="ew", padx=4, pady=6
             )
+            if row == 0:
+                self.nombre_entry = entry
             row += 1
 
         ttk.Label(form_card, text="Dirección:", style="FormLabel.TLabel").grid(
@@ -101,7 +101,7 @@ class ClientsFrame(ttk.Frame):
         ttk.Button(actions, text="Guardar", style="Primary.TButton", command=self.save_client).grid(
             row=0, column=0, sticky="ew", padx=4
         )
-        ttk.Button(actions, text="Editar", style="Secondary.TButton", command=self.edit_client).grid(
+        ttk.Button(actions, text="Nuevo", style="Secondary.TButton", command=self.start_new_client).grid(
             row=0, column=1, sticky="ew", padx=4
         )
         ttk.Button(actions, text="Eliminar", style="Danger.TButton", command=self.delete_client).grid(
@@ -161,7 +161,6 @@ class ClientsFrame(ttk.Frame):
         x_scroll.grid(row=3, column=0, sticky="ew")
 
         self.tree.bind("<<TreeviewSelect>>", self.on_client_select)
-        self.tree.bind("<Double-1>", lambda _event: self.edit_client())
 
         footer = ttk.Frame(list_card, style="Surface.TFrame")
         footer.grid(row=4, column=0, sticky="ew", pady=(10, 0))
@@ -371,11 +370,10 @@ class ClientsFrame(ttk.Frame):
             else:
                 self._show_error("Error", f"Error al guardar cliente: {exc}")
 
-    def edit_client(self):
-        if not self.cliente_id_seleccionado:
-            self._show_warning("Advertencia", "Seleccione un cliente para editar.")
-            return
-        self._show_info("Modo edición", "Modifique los campos y presione Guardar para confirmar.")
+    def start_new_client(self):
+        self.clear_form()
+        self.tree.focus("")
+        self.nombre_entry.focus_set()
 
     def delete_client(self):
         if not self.cliente_id_seleccionado:
@@ -528,3 +526,4 @@ class ClientsFrame(ttk.Frame):
             )
         except Exception as exc:
             self._show_error("Error", f"Error al calcular estadísticas: {exc}")
+

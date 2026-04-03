@@ -275,6 +275,18 @@ def apply_app_theme(root, theme_name: str | None = None):
         font=FONTS["small"],
     )
     style.configure(
+        "TopbarTitle.TLabel",
+        background=PALETTE["white"],
+        foreground=PALETTE["blue_dark"],
+        font=("Segoe UI Semibold", 11),
+    )
+    style.configure(
+        "TopbarInfo.TLabel",
+        background=PALETTE["white"],
+        foreground=PALETTE["gray_text"],
+        font=FONTS["small"],
+    )
+    style.configure(
         "IntroTitle.TLabel",
         background=PALETTE["surface_alt"],
         foreground=PALETTE["black"],
@@ -409,6 +421,69 @@ def apply_app_theme(root, theme_name: str | None = None):
         foreground=PALETTE["white"],
     )
     style.map("NavAccent.TButton", background=[("active", PALETTE["blue_light"])])
+    style.configure(
+        "TopbarNav.TButton",
+        font=("Segoe UI Semibold", 10),
+        padding=(12, 7),
+        relief="flat",
+        borderwidth=1,
+        bordercolor=PALETTE["gray_border"],
+        background=PALETTE["white"],
+        foreground=PALETTE["blue_dark"],
+    )
+    style.map(
+        "TopbarNav.TButton",
+        background=[("active", PALETTE["surface_alt"])],
+        foreground=[("active", PALETTE["blue_primary"])],
+        bordercolor=[("active", PALETTE["blue_primary"])],
+    )
+    style.configure(
+        "TopbarNavAccent.TButton",
+        font=("Segoe UI Semibold", 10),
+        padding=(12, 7),
+        relief="flat",
+        borderwidth=1,
+        bordercolor=PALETTE["blue_primary"],
+        background=PALETTE["blue_primary"],
+        foreground=PALETTE["white"],
+    )
+    style.map(
+        "TopbarNavAccent.TButton",
+        background=[("active", "#1E40AF")],
+        bordercolor=[("active", "#1E40AF")],
+    )
+    style.configure(
+        "TopbarAction.TButton",
+        font=("Segoe UI Semibold", 10),
+        padding=(10, 7),
+        relief="flat",
+        borderwidth=1,
+        bordercolor=PALETTE["gray_border"],
+        background=PALETTE["surface_alt"],
+        foreground=PALETTE["blue_dark"],
+    )
+    style.map(
+        "TopbarAction.TButton",
+        background=[("active", PALETTE["blue_light"])],
+        foreground=[("active", PALETTE["blue_dark"])],
+        bordercolor=[("active", PALETTE["blue_primary"])],
+    )
+    style.configure(
+        "TopbarDanger.TButton",
+        font=("Segoe UI Semibold", 10),
+        padding=(10, 7),
+        relief="flat",
+        borderwidth=1,
+        bordercolor=PALETTE["danger"],
+        background=PALETTE["white"],
+        foreground=PALETTE["danger"],
+    )
+    style.map(
+        "TopbarDanger.TButton",
+        background=[("active", PALETTE["danger"])],
+        foreground=[("active", PALETTE["white"])],
+        bordercolor=[("active", PALETTE["danger"])],
+    )
 
     style.configure(
         "TNotebook",

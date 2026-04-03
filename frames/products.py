@@ -1,11 +1,11 @@
-"""
+﻿"""
 frames/products.py
 Gestion de productos con CRUD e importacion/exportacion.
 """
 
 # Contexto del archivo:
 # Este modulo conserva la interfaz legacy de productos con formularios,
-# buscadores, modal de alta, importacion CSV y ajuste masivo de precios.
+# buscadores, importacion CSV y ajuste masivo de precios.
 # La validacion y la persistencia importante ya no deberian decidirse aqui:
 # se delegan a servicios, repositorios y casos de uso dentro de `erp/`.
 
@@ -21,9 +21,6 @@ from erp.domain.use_cases.products.adjust_prices import AdjustPrices
 from erp.domain.use_cases.products.delete_product import DeleteProduct
 from erp.domain.use_cases.products.list_products import ListProducts
 from erp.domain.use_cases.products.save_product import SaveProduct
-from erp.domain.use_cases.products.search_brands import SearchBrands
-from erp.domain.use_cases.products.search_categories import SearchCategories
-from erp.domain.use_cases.products.search_suppliers import SearchSuppliers
 from .ui import create_modal, format_hnl, normalize_hnl_amount
 
 
@@ -47,7 +44,6 @@ class ProductFrame(ttk.Frame):
         self.marca_id = tk.StringVar(value="")
         self.marca_nombre = tk.StringVar()
         self.search_var = tk.StringVar()
-        self.new_product_popup = None
         self.supplier_name_to_id = {}
         self.supplier_id_to_name = {}
         self.category_name_to_id = {}
@@ -67,9 +63,6 @@ class ProductFrame(ttk.Frame):
             self.taxonomy_repository,
         )
         self.delete_product_use_case = DeleteProduct(self.product_repository)
-        self.search_suppliers_use_case = SearchSuppliers(self.supplier_repository)
-        self.search_categories_use_case = SearchCategories(self.taxonomy_repository)
-        self.search_brands_use_case = SearchBrands(self.taxonomy_repository)
         self.adjust_prices_use_case = AdjustPrices(self.product_repository, self.price_adjustment_service)
 
         self._build_ui()
@@ -81,19 +74,16 @@ class ProductFrame(ttk.Frame):
     def _build_ui(self):
         self.columnconfigure(0, weight=8)
         self.columnconfigure(1, weight=5)
-        self.rowconfigure(1, weight=1)
+        self.rowconfigure(0, weight=1)
 
-        ttk.Label(self, text="Gestion de productos", style="Header.TLabel").grid(
-            row=0, column=0, columnspan=2, sticky="w", pady=(0, 12)
-        )
 
         self.list_frame = ttk.LabelFrame(self, text="Listado de productos", style="Card.TLabelframe")
-        self.list_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 8))
+        self.list_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
         self.list_frame.columnconfigure(0, weight=1)
         self.list_frame.rowconfigure(1, weight=1)
 
         self.form_frame = ttk.LabelFrame(self, text="Formulario de producto", style="Card.TLabelframe")
-        self.form_frame.grid(row=1, column=1, sticky="nsew")
+        self.form_frame.grid(row=0, column=1, sticky="nsew")
         self.form_frame.columnconfigure(1, weight=1)
 
         self._create_product_list()
@@ -169,7 +159,7 @@ class ProductFrame(ttk.Frame):
             btn_frame,
             text="Nuevo producto",
             style="Secondary.TButton",
-            command=self.open_new_product_modal,
+            command=self.start_new_product,
         ).pack(
             side="left", padx=(0, 6)
         )
@@ -208,9 +198,12 @@ class ProductFrame(ttk.Frame):
             ttk.Label(self.form_frame, text=label_text, style="FormLabel.TLabel").grid(
                 row=row, column=0, sticky="w", padx=4, pady=7
             )
-            ttk.Entry(self.form_frame, textvariable=var).grid(
+            entry = ttk.Entry(self.form_frame, textvariable=var)
+            entry.grid(
                 row=row, column=1, sticky="ew", padx=4, pady=7
             )
+            if row == 0:
+                self.nombre_entry = entry
             row += 1
 
         ttk.Label(self.form_frame, text="Proveedor:", style="FormLabel.TLabel").grid(
@@ -334,6 +327,12 @@ class ProductFrame(ttk.Frame):
         self._load_category_options()
         self._load_brand_options()
         self.desc_text.delete("1.0", tk.END)
+
+    def start_new_product(self):
+        self.reset_form()
+        self.tree.selection_remove(self.tree.selection())
+        self.tree.focus("")
+        self.nombre_entry.focus_set()
 
     def _load_choice_options(
         self,
@@ -471,7 +470,7 @@ class ProductFrame(ttk.Frame):
 
         self.load_products()
         self.reset_form()
-        self._show_info("Exito", f"Producto {action_text} correctamente.")
+        self._show_info("Éxito", f"Producto {action_text} correctamente.")
 
     def focus_product(self, product_id):
         """Carga y enfoca un producto concreto dentro del listado para edición rápida."""
@@ -490,258 +489,6 @@ class ProductFrame(ttk.Frame):
         self.tree.focus(product_key)
         self.tree.see(product_key)
         self.select_product(None)
-
-    def _fetch_supplier_matches(self, search_term="", limit=8):
-        """Busca proveedores por coincidencia parcial de nombre."""
-        matches = self.search_suppliers_use_case.execute(search_term, limit=limit)
-        return [(match["id"], match["nombre"]) for match in matches]
-
-    def _fetch_category_matches(self, search_term="", limit=8):
-        matches = self.search_categories_use_case.execute(search_term, limit=limit)
-        return [(match["id"], match["nombre"]) for match in matches]
-
-    def _fetch_brand_matches(self, search_term="", limit=8):
-        matches = self.search_brands_use_case.execute(search_term, limit=limit)
-        return [(match["id"], match["nombre"]) for match in matches]
-
-    def open_new_product_modal(self):
-        if self.new_product_popup and self.new_product_popup.winfo_exists():
-            self.new_product_popup.deiconify()
-            self.new_product_popup.lift()
-            return
-
-        popup = create_modal(self._parent(), "Nuevo producto", width=980, height=760)
-        self.new_product_popup = popup
-        popup.protocol("WM_DELETE_WINDOW", self._close_new_product_modal)
-
-        content = ttk.Frame(popup, padding=18, style="Surface.TFrame")
-        content.pack(fill="both", expand=True)
-        content.columnconfigure(1, weight=1)
-        content.rowconfigure(6, weight=1)
-
-        nombre_var = tk.StringVar()
-        precio_var = tk.StringVar()
-        stock_var = tk.StringVar(value="0")
-        codigo_producto_var = tk.StringVar()
-        proveedor_var = tk.StringVar()
-        categoria_var = tk.StringVar()
-        marca_var = tk.StringVar()
-        supplier_search_var = tk.StringVar()
-        category_search_var = tk.StringVar()
-        brand_search_var = tk.StringVar()
-        supplier_status_var = tk.StringVar(value="Seleccione un proveedor de la lista.")
-        category_status_var = tk.StringVar(value="Seleccione una categoria de la lista.")
-        brand_status_var = tk.StringVar(value="Seleccione una marca de la lista.")
-
-        ttk.Label(
-            content,
-            text="Registre un producto nuevo en una ventana independiente.",
-            style="Muted.TLabel",
-            wraplength=720,
-        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 14))
-
-        fields = [
-            ("Nombre:", nombre_var),
-            ("Precio (HNL):", precio_var),
-            ("Stock:", stock_var),
-            ("Codigo producto:", codigo_producto_var),
-        ]
-
-        for row, (label_text, variable) in enumerate(fields, start=1):
-            ttk.Label(content, text=label_text, style="FormLabel.TLabel").grid(
-                row=row,
-                column=0,
-                sticky="w",
-                padx=(0, 10),
-                pady=6,
-            )
-            ttk.Entry(content, textvariable=variable).grid(
-                row=row,
-                column=1,
-                sticky="ew",
-                pady=6,
-            )
-
-        lookup_frame = ttk.Frame(content, style="Surface.TFrame")
-        lookup_frame.grid(row=5, column=0, columnspan=2, sticky="nsew", pady=(6, 10))
-        lookup_frame.columnconfigure(0, weight=1)
-        lookup_frame.columnconfigure(1, weight=1)
-        lookup_frame.columnconfigure(2, weight=1)
-
-        def create_lookup_panel(parent, *, column: int, title: str, search_var, status_var):
-            panel = ttk.LabelFrame(parent, text=title, style="Card.TLabelframe")
-            panel.grid(row=0, column=column, sticky="nsew", padx=(0, 8) if column < 2 else 0)
-            panel.columnconfigure(0, weight=1)
-            panel.rowconfigure(2, weight=1)
-
-            entry = ttk.Entry(panel, textvariable=search_var)
-            entry.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 6))
-            ttk.Label(panel, textvariable=status_var, style="Muted.TLabel", wraplength=250).grid(
-                row=1,
-                column=0,
-                sticky="w",
-                padx=8,
-                pady=(0, 6),
-            )
-            listbox = tk.Listbox(panel, height=6, exportselection=False, relief="solid", borderwidth=1)
-            listbox.grid(row=2, column=0, sticky="nsew", padx=8, pady=(0, 8))
-            entry.bind("<Down>", lambda _event: listbox.focus_set())
-            return listbox
-
-        supplier_listbox = create_lookup_panel(
-            lookup_frame,
-            column=0,
-            title="Proveedor",
-            search_var=supplier_search_var,
-            status_var=supplier_status_var,
-        )
-        category_listbox = create_lookup_panel(
-            lookup_frame,
-            column=1,
-            title="Categoria",
-            search_var=category_search_var,
-            status_var=category_status_var,
-        )
-        brand_listbox = create_lookup_panel(
-            lookup_frame,
-            column=2,
-            title="Marca",
-            search_var=brand_search_var,
-            status_var=brand_status_var,
-        )
-
-        ttk.Label(content, text="Descripcion:", style="FormLabel.TLabel").grid(
-            row=6,
-            column=0,
-            sticky="nw",
-            padx=(0, 10),
-            pady=6,
-        )
-        desc_text = tk.Text(content, height=8, wrap=tk.WORD, relief="solid", borderwidth=1)
-        desc_text.grid(row=6, column=1, sticky="nsew", pady=6)
-
-        actions = ttk.Frame(content, style="Surface.TFrame")
-        actions.grid(row=7, column=0, columnspan=2, sticky="e", pady=(16, 0))
-
-        def setup_lookup_selector(
-            *,
-            search_var,
-            status_var,
-            listbox,
-            selected_var,
-            fetch_matches,
-            empty_message: str,
-            select_message: str,
-            selected_message: str,
-        ):
-            state = {"matches": []}
-
-            def refresh(*_args):
-                state["matches"] = fetch_matches(search_var.get())
-                listbox.delete(0, tk.END)
-                for _item_id, item_name in state["matches"]:
-                    listbox.insert(tk.END, item_name)
-
-                selected_id = selected_var.get().strip()
-                if not state["matches"]:
-                    selected_var.set("")
-                    status_var.set(empty_message)
-                    return
-
-                if selected_id:
-                    for item_id, item_name in state["matches"]:
-                        if str(item_id) == selected_id:
-                            status_var.set(selected_message.format(name=item_name))
-                            return
-                    selected_var.set("")
-
-                status_var.set(select_message)
-
-            def choose(_event=None):
-                selection = listbox.curselection()
-                if not selection:
-                    return
-                item_id, item_name = state["matches"][selection[0]]
-                selected_var.set(str(item_id))
-                search_var.set(item_name)
-                status_var.set(selected_message.format(name=item_name))
-                listbox.selection_clear(0, tk.END)
-
-            search_var.trace_add("write", refresh)
-            listbox.bind("<<ListboxSelect>>", choose)
-            listbox.bind("<Double-Button-1>", choose)
-            refresh()
-
-        setup_lookup_selector(
-            search_var=supplier_search_var,
-            status_var=supplier_status_var,
-            listbox=supplier_listbox,
-            selected_var=proveedor_var,
-            fetch_matches=self._fetch_supplier_matches,
-            empty_message="No hay coincidencias. Siga escribiendo o cree el proveedor antes.",
-            select_message="Seleccione un proveedor de la lista.",
-            selected_message="Proveedor seleccionado: {name}.",
-        )
-        setup_lookup_selector(
-            search_var=category_search_var,
-            status_var=category_status_var,
-            listbox=category_listbox,
-            selected_var=categoria_var,
-            fetch_matches=self._fetch_category_matches,
-            empty_message="No hay coincidencias. Siga escribiendo o revise el catalogo de categorias.",
-            select_message="Seleccione una categoria de la lista.",
-            selected_message="Categoria seleccionada: {name}.",
-        )
-        setup_lookup_selector(
-            search_var=brand_search_var,
-            status_var=brand_status_var,
-            listbox=brand_listbox,
-            selected_var=marca_var,
-            fetch_matches=self._fetch_brand_matches,
-            empty_message="No hay coincidencias. Siga escribiendo o revise el catalogo de marcas.",
-            select_message="Seleccione una marca de la lista.",
-            selected_message="Marca seleccionada: {name}.",
-        )
-
-        def submit_new_product():
-            if not self._require_selection(categoria_var.get(), label="categoria"):
-                return
-            if not self._require_selection(marca_var.get(), label="marca"):
-                return
-            try:
-                self.save_product_use_case.execute(
-                    nombre=nombre_var.get().strip(),
-                    precio=precio_var.get().strip(),
-                    stock=stock_var.get().strip(),
-                    proveedor_id=proveedor_var.get().strip(),
-                    descripcion=desc_text.get("1.0", tk.END).strip(),
-                    codigo_producto=codigo_producto_var.get().strip(),
-                    categoria_id=categoria_var.get().strip(),
-                    marca_id=marca_var.get().strip(),
-                )
-            except (ValueError, ProductRepositoryError) as exc:
-                self._show_error("Error", str(exc))
-                return
-
-            self.load_products()
-            self._show_info("Exito", "Producto agregado correctamente.")
-            self._close_new_product_modal()
-
-        ttk.Button(actions, text="Cancelar", style="Secondary.TButton", command=self._close_new_product_modal).pack(
-            side="right"
-        )
-        ttk.Button(actions, text="Guardar producto", style="Primary.TButton", command=submit_new_product).pack(
-            side="right", padx=(0, 8)
-        )
-
-        first_entry = content.grid_slaves(row=1, column=1)
-        if first_entry:
-            first_entry[0].focus_set()
-
-    def _close_new_product_modal(self):
-        if self.new_product_popup and self.new_product_popup.winfo_exists():
-            self.new_product_popup.destroy()
-        self.new_product_popup = None
 
     def open_price_optimizer(self):
         popup = create_modal(self._parent(), "Ajuste competitivo de precios", width=520, height=360)
@@ -801,7 +548,7 @@ class ProductFrame(ttk.Frame):
             popup.destroy()
             self.load_products()
             self._show_info(
-                "Exito",
+                "Éxito",
                 f"Precios ajustados en {result.updated} productos.\nAjuste aplicado: {pct:.2f}% | Redondeo: {step:.2f} HNL.",
             )
 
@@ -824,10 +571,12 @@ class ProductFrame(ttk.Frame):
             except ProductRepositoryError as exc:
                 self._show_error("Error", str(exc))
                 return
-            self._show_info("Exito", "Producto eliminado.")
+            self._show_info("Éxito", "Producto eliminado.")
             self.load_products()
             self.reset_form()
 
     def refresh_products(self):
-        """Metodo publico para refrescar la lista (usado por FileManager)."""
+        """Método público para refrescar la lista (usado por FileManager)."""
         self.load_products()
+
+

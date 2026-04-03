@@ -116,7 +116,7 @@ class Phase1UseCasesTests(unittest.TestCase):
         self.assertEqual(sale_count, 0)
         self.assertEqual(current_stock, original_stock)
 
-    def test_receipt_service_uses_receipt_configuration_from_db(self):
+    def test_receipt_service_uses_fixed_internal_labels_and_business_data_from_db(self):
         self.db.set_config("empresa_nombre", "Mi ERP")
         self.db.set_config("recibo_doc_title", "RECIBO CENTRAL")
         self.db.set_config("recibo_template", "<html><body><h1>{{DOC_TITLE}}</h1><div>{{NOMBRE_NEGOCIO}}</div></body></html>")
@@ -139,7 +139,7 @@ class Phase1UseCasesTests(unittest.TestCase):
             metodo_pago="EFECTIVO",
         )
 
-        self.assertIn("RECIBO CENTRAL", html)
+        self.assertIn("FACTURA", html)
         self.assertIn("Mi ERP", html)
 
 

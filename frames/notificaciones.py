@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 notificaciones.py
 Sistema de notificaciones push profesional para ERP con gestión avanzada.
@@ -1257,32 +1257,41 @@ class ProfessionalNotificationCenter(tk.Toplevel):
         main_frame.pack(fill='both', expand=True, padx=20, pady=20)
         
         # Header
-        header_frame = tk.Frame(main_frame, bg=PALETTE['white'], height=80)
-        header_frame.pack(fill='x', pady=(0, 20))
-        header_frame.pack_propagate(False)
-        
+        header_frame = tk.Frame(main_frame, bg=PALETTE['white'], padx=18, pady=12)
+        header_frame.pack(fill='x', pady=(0, 14))
+        header_frame.columnconfigure(0, weight=1)
+
         # Título y estadísticas
         title_frame = tk.Frame(header_frame, bg=PALETTE['white'])
-        title_frame.pack(side='left', padx=20, pady=15)
-        
-        tk.Label(title_frame, text="Centro de Notificaciones", 
-                font=('Segoe UI Semibold', 20), bg=PALETTE['white'],
-                fg=PALETTE['blue_dark']).pack(anchor='w')
-        
+        title_frame.grid(row=0, column=0, sticky='w')
+
+        tk.Label(
+            title_frame,
+            text="Centro de Notificaciones",
+            font=('Segoe UI Semibold', 18),
+            bg=PALETTE['white'],
+            fg=PALETTE['blue_dark'],
+        ).pack(anchor='w')
+
         stats_frame = tk.Frame(title_frame, bg=PALETTE['white'])
-        stats_frame.pack(anchor='w', pady=(5, 0))
-        
+        stats_frame.pack(anchor='w', pady=(2, 0))
+
         unread_count = self.manager.get_unread_count()
-        tk.Label(stats_frame, text=f"📬 {len(self.manager.notification_history)} total  •  🔔 {unread_count} no leídas",
-                font=('Segoe UI', 10), bg=PALETTE['white'], fg=PALETTE['gray_text']).pack()
-        
+        tk.Label(
+            stats_frame,
+            text=f"{len(self.manager.notification_history)} notificaciones • {unread_count} no leídas",
+            font=('Segoe UI', 10),
+            bg=PALETTE['white'],
+            fg=PALETTE['gray_text'],
+        ).pack(anchor='w')
+
         # Botones de acción
         actions_frame = tk.Frame(header_frame, bg=PALETTE['white'])
-        actions_frame.pack(side='right', padx=20, pady=15)
-        
-        self._create_button(actions_frame, "📥 Marcar todas leídas", self._mark_all_read, 'secondary')
-        self._create_button(actions_frame, "🗑️ Limpiar historial", self._clear_history, 'danger')
-        self._create_button(actions_frame, "⚙️ Configuración", self._open_settings, 'primary')
+        actions_frame.grid(row=0, column=1, sticky='e')
+
+        self._create_button(actions_frame, "Marcar leídas", self._mark_all_read, 'secondary', button_padx=12, button_pady=6, pack_padx=4)
+        self._create_button(actions_frame, "Limpiar historial", self._clear_history, 'danger', button_padx=12, button_pady=6, pack_padx=4)
+        self._create_button(actions_frame, "Configuración", self._open_settings, 'primary', button_padx=12, button_pady=6, pack_padx=0)
         
         # Notebook para tabs
         self.notebook = ttk.Notebook(main_frame)
@@ -1298,7 +1307,7 @@ class ProfessionalNotificationCenter(tk.Toplevel):
         self.notebook.add(self.stats_tab, text="📊 Estadísticas")
         self._create_stats_tab()
     
-    def _create_button(self, parent, text, command, style='primary'):
+    def _create_button(self, parent, text, command, style='primary', *, button_padx=15, button_pady=8, pack_padx=5):
         """Crea un botón con estilo."""
         colors = {
             'primary': {'bg': PALETTE['blue_primary'], 'fg': 'white'},
@@ -1309,9 +1318,9 @@ class ProfessionalNotificationCenter(tk.Toplevel):
         btn = tk.Button(parent, text=text, command=command,
                        font=('Segoe UI Semibold', 9),
                        bg=colors[style]['bg'], fg=colors[style]['fg'],
-                       padx=15, pady=8, cursor='hand2',
+                       padx=button_padx, pady=button_pady, cursor='hand2',
                        relief='flat', borderwidth=0)
-        btn.pack(side='left', padx=5)
+        btn.pack(side='left', padx=pack_padx)
         
         # Hover effect
         def on_enter(e):

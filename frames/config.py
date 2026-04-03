@@ -1,4 +1,4 @@
-"""
+﻿"""
 frames/config.py
 Configuracion del sistema, descuentos y plantilla de recibos.
 """
@@ -9,13 +9,12 @@ from tkinter import messagebox, ttk
 import webbrowser
 
 from erp.data.repositories.config_repository import ConfigRepository, RepositoryError
+from erp.ui.backup_panel import BackupSettingsPanel
 from erp.ui.shared import PALETTE, get_available_themes
 from frames.taxonomy import CatalogTaxonomyFrame
 from receipt_builder import (
     build_receipt_html,
     build_receipt_view_model,
-    default_receipt_labels,
-    load_receipt_labels,
     load_receipt_render_settings,
 )
 
@@ -72,26 +71,8 @@ class ConfigFrame(ttk.Frame):
         self.company_tel_var = tk.StringVar()
         self.company_email_var = tk.StringVar()
         self.company_logo_var = tk.StringVar()
-        self.company_address_var = tk.StringVar()
-        self.receipt_notes_var = tk.StringVar()
-        
-        # Variables de textos del recibo
-        self.receipt_title_var = tk.StringVar()
-        self.receipt_order_exempt_var = tk.StringVar()
-        self.receipt_exempt_register_var = tk.StringVar()
-        self.receipt_discounts_var = tk.StringVar()
-        self.receipt_summary_title_var = tk.StringVar()
-        self.receipt_copy_label_var = tk.StringVar()
-        self.receipt_thanks_var = tk.StringVar()
-        self.receipt_amount_label_var = tk.StringVar()
-        self.receipt_change_label_var = tk.StringVar()
-        self.receipt_observations_label_var = tk.StringVar()
         self.theme_var = tk.StringVar(value=getattr(self.app, "current_theme", "light"))
-        
-        # Estado de edición
-        self.full_template_edit_unlocked = False
         self._last_preview_path = None
-        self._template_content = self._load_stored_receipt_template()
 
         self._build_ui()
         self.load_discounts()
@@ -164,26 +145,18 @@ class ConfigFrame(ttk.Frame):
     def _build_ui(self):
         """Construye la interfaz de usuario."""
         self.columnconfigure(0, weight=1)
-        self.rowconfigure(2, weight=1)
+        self.rowconfigure(1, weight=1)
 
         # Header con título y botones de acceso rápido
         header_frame = ttk.Frame(self, style="App.TFrame")
         header_frame.grid(row=0, column=0, sticky="ew", pady=(0, 10))
         header_frame.columnconfigure(0, weight=1)
 
-        ttk.Label(header_frame, text="Configuración del Sistema", style="Header.TLabel").grid(
-            row=0, column=0, sticky="w"
-        )
-        ttk.Label(
-            header_frame,
-            text="Administra descuentos, categorías, marcas y la plantilla de tus recibos",
-            style="Muted.TLabel",
-        ).grid(row=1, column=0, sticky="w", pady=(2, 0))
         self._create_help_button(header_frame, "main", 1, owner=self._parent, row=0)
 
         # Botones de acceso rápido a ventanas emergentes
         buttons_frame = ttk.Frame(header_frame, style="App.TFrame")
-        buttons_frame.grid(row=0, column=2, rowspan=2, sticky="e")
+        buttons_frame.grid(row=0, column=0, sticky="w")
         
         ttk.Button(
             buttons_frame,
@@ -208,12 +181,19 @@ class ConfigFrame(ttk.Frame):
 
         # Notebook con UNA SOLA pestaña: Descuentos
         self.notebook = ttk.Notebook(self)
-        self.notebook.grid(row=2, column=0, sticky="nsew")
+        self.notebook.grid(row=1, column=0, sticky="nsew")
 
         disc_tab = ttk.Frame(self.notebook, padding=12, style="App.TFrame")
         self.notebook.add(disc_tab, text="💰 Descuentos")
         
         self.create_discount_tab(disc_tab)
+
+        backup_tab = ttk.Frame(self.notebook, padding=12, style="App.TFrame")
+        self.notebook.add(backup_tab, text="Respaldos")
+        self.backup_panel = BackupSettingsPanel(backup_tab, self.app, self.app.backup_service)
+        self.backup_panel.grid(row=0, column=0, sticky="nsew")
+        backup_tab.columnconfigure(0, weight=1)
+        backup_tab.rowconfigure(0, weight=1)
 
     # ========================================================================
     # VENTANAS EMERGENTES COMPLETAS
@@ -395,19 +375,12 @@ class ConfigFrame(ttk.Frame):
         status_bar.grid(row=0, column=0, sticky="ew", padx=12, pady=(10, 5))
         status_bar.columnconfigure(0, weight=1)
 
-        self.template_lock_var = tk.StringVar(
-            value="🔒 Modo protegido activo: la estructura, productos, cálculos e impuestos están bloqueados."
-        )
-        ttk.Label(status_bar, textvariable=self.template_lock_var, style="Muted.TLabel", wraplength=450).grid(
-            row=0, column=0, sticky="w"
-        )
-        self.unlock_template_btn = ttk.Button(
+        ttk.Label(
             status_bar,
-            text="🔓 Desbloquear edición total",
-            style="Secondary.TButton",
-            command=self.toggle_full_template_edit,
-        )
-        self.unlock_template_btn.grid(row=0, column=1, sticky="e", padx=(10, 0))
+            text="Las etiquetas del recibo y la estructura fiscal son fijas. Solo se edita la información del negocio.",
+            style="Muted.TLabel",
+            wraplength=520,
+        ).grid(row=0, column=0, sticky="w")
 
         # Área de formularios con scroll (para que TODO sea visible)
         form_canvas = tk.Canvas(editor_card, highlightthickness=0, bg=PALETTE["surface_alt"])
@@ -450,88 +423,20 @@ class ConfigFrame(ttk.Frame):
         self.company_address_text.grid(row=len(business_fields), column=1, sticky="ew", padx=10, pady=8)
         self.company_address_text.insert("1.0", self.db.get_config("empresa_direccion", "") or "")
 
-        # Textos visibles
-        texts_card = ttk.LabelFrame(form_area, text="📝 Textos visibles del recibo", style="Card.TLabelframe")
-        texts_card.grid(row=1, column=0, sticky="ew", pady=(0, 15), padx=5)
-        texts_card.columnconfigure(1, weight=1)
-        texts_card.columnconfigure(3, weight=1)
+        info_card = ttk.LabelFrame(form_area, text="ℹ️ Estructura fija del recibo", style="Card.TLabelframe")
+        info_card.grid(row=1, column=0, sticky="ew", pady=(0, 5), padx=5)
+        info_card.columnconfigure(0, weight=1)
 
-        visible_fields = [
-            ("Título", self.receipt_title_var),
-            ("Compra exenta", self.receipt_order_exempt_var),
-            ("Registro exento", self.receipt_exempt_register_var),
-            ("Descuentos", self.receipt_discounts_var),
-            ("Resumen", self.receipt_summary_title_var),
-            ("Monto recibido", self.receipt_amount_label_var),
-            ("Vuelto", self.receipt_change_label_var),
-            ("Observaciones", self.receipt_observations_label_var),
-            ("Pie cliente", self.receipt_copy_label_var),
-            ("Mensaje final", self.receipt_thanks_var),
-        ]
-        for index, (label_text, variable) in enumerate(visible_fields):
-            row = index // 2
-            col = (index % 2) * 2
-            ttk.Label(texts_card, text=label_text, style="FormLabel.TLabel", font=('Segoe UI', 10)).grid(
-                row=row, column=col, sticky="w", padx=10, pady=8
-            )
-            ttk.Entry(texts_card, textvariable=variable, font=('Segoe UI', 10), width=25).grid(
-                row=row, column=col + 1, sticky="ew", padx=10, pady=8
-            )
-
-        # Observaciones fijas
-        notes_card = ttk.LabelFrame(form_area, text="📌 Observación fija del recibo", style="Card.TLabelframe")
-        notes_card.grid(row=2, column=0, sticky="ew", pady=(0, 15), padx=5)
-        notes_card.columnconfigure(0, weight=1)
-        notes_card.rowconfigure(1, weight=1)
-        
         ttk.Label(
-            notes_card,
-            text="Este texto se inserta en la línea de observaciones del recibo real.",
+            info_card,
+            text=(
+                "El recibo usa etiquetas internas fijas y un resumen fiscal estándar. "
+                "Ya no se configuran textos visibles, observaciones fijas ni plantillas manuales."
+            ),
             style="Muted.TLabel",
+            wraplength=520,
             font=('Segoe UI', 9)
-        ).grid(row=0, column=0, sticky="w", padx=10, pady=(10, 5))
-        
-        self.receipt_notes_text = tk.Text(notes_card, height=4, wrap=tk.WORD, 
-                                          relief="solid", borderwidth=1, font=('Segoe UI', 10))
-        self.receipt_notes_text.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
-        self.receipt_notes_text.insert("1.0", self.db.get_config("recibo_observaciones", "") or "")
-
-        # Modo avanzado
-        self.advanced_card = ttk.LabelFrame(form_area, text="🔧 Edición total avanzada", 
-                                           style="Card.TLabelframe")
-        self.advanced_card.grid(row=3, column=0, sticky="nsew", pady=(0, 5), padx=5)
-        self.advanced_card.columnconfigure(0, weight=1)
-        self.advanced_card.rowconfigure(1, weight=1)
-        
-        ttk.Label(
-            self.advanced_card,
-            text="⚠️ Modo avanzado: modifica la base estructurada solo si necesitas un ajuste profundo.\n"
-                 "Los marcadores dinámicos {{...}} mantienen los datos automáticos.",
-            style="Muted.TLabel",
-            wraplength=550,
-            font=('Segoe UI', 9)
-        ).grid(row=0, column=0, sticky="w", padx=10, pady=(10, 5))
-        
-        advanced_text_frame = ttk.Frame(self.advanced_card)
-        advanced_text_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
-        advanced_text_frame.columnconfigure(0, weight=1)
-        advanced_text_frame.rowconfigure(0, weight=1)
-        
-        self.template_text = tk.Text(advanced_text_frame, height=15, font=("Consolas", 10), wrap=tk.NONE)
-        self.template_text.grid(row=0, column=0, sticky="nsew")
-        self.template_text.insert("1.0", self._template_content)
-        self.template_text.bind("<KeyRelease>", self.on_template_text_changed)
-        
-        advanced_scroll_y = ttk.Scrollbar(advanced_text_frame, orient="vertical", 
-                                         command=self.template_text.yview)
-        advanced_scroll_x = ttk.Scrollbar(advanced_text_frame, orient="horizontal", 
-                                         command=self.template_text.xview)
-        advanced_scroll_y.grid(row=0, column=1, sticky="ns")
-        advanced_scroll_x.grid(row=1, column=0, sticky="ew")
-        self.template_text.configure(yscrollcommand=advanced_scroll_y.set, 
-                                     xscrollcommand=advanced_scroll_x.set)
-        
-        self.advanced_card.grid_remove()
+        ).grid(row=0, column=0, sticky="w", padx=10, pady=10)
 
         # ========== COLUMNA DERECHA: VISTA PREVIA COMPLETA ==========
         preview_card = ttk.LabelFrame(body, text="👁️ Vista previa en tiempo real", style="Card.TLabelframe")
@@ -594,14 +499,9 @@ class ConfigFrame(ttk.Frame):
         
         ttk.Button(btn_frame, text="🌐 Vista previa en navegador", style="Secondary.TButton", 
                   command=self.preview_receipt).pack(side="left", padx=(0, 10))
-        ttk.Button(
-            btn_frame,
-            text="🔄 Restaurar original",
-            style="Secondary.TButton",
-            command=self.restore_default_template,
-        ).pack(side="right", padx=(10, 0))
-        ttk.Button(btn_frame, text="💾 Guardar plantilla", style="Primary.TButton", 
-                  command=self.save_receipt_template).pack(side="right")
+        ttk.Button(btn_frame, text="💾 Guardar cambios", style="Primary.TButton", command=self.save_receipt_template).pack(
+            side="right"
+        )
 
         self._hydrate_receipt_editor_widgets()
 
@@ -747,6 +647,12 @@ class ConfigFrame(ttk.Frame):
             self._personalization_window.destroy()
             self._personalization_window = None
 
+    def focus_backup_tab(self):
+        if hasattr(self, "backup_panel"):
+            self.notebook.select(self.backup_panel.master)
+            self.backup_panel.refresh_all()
+            self.backup_panel.focus_primary_action()
+
     # ========================================================================
     # DESCUENTOS (funcionalidad original - SIN CAMBIOS)
     # ========================================================================
@@ -798,7 +704,7 @@ class ConfigFrame(ttk.Frame):
         btn_frame = ttk.Frame(list_frame, style="Surface.TFrame")
         btn_frame.grid(row=2, column=0, sticky="ew", pady=(10, 0))
 
-        ttk.Button(btn_frame, text="➕ Nuevo", style="Secondary.TButton", command=self.reset_discount_form).pack(
+        ttk.Button(btn_frame, text="➕ Nuevo", style="Secondary.TButton", command=self.start_new_discount).pack(
             side="left", padx=(0, 6)
         )
         ttk.Button(btn_frame, text="🗑️ Eliminar", style="Danger.TButton", command=self.delete_discount).pack(side="left")
@@ -812,7 +718,10 @@ class ConfigFrame(ttk.Frame):
             ttk.Label(form_frame, text=label, style="FormLabel.TLabel").grid(
                 row=row, column=0, sticky="w", padx=4, pady=7
             )
-            ttk.Entry(form_frame, textvariable=var).grid(row=row, column=1, sticky="ew", padx=4, pady=7)
+            entry = ttk.Entry(form_frame, textvariable=var)
+            entry.grid(row=row, column=1, sticky="ew", padx=4, pady=7)
+            if row == 0:
+                self.disc_nombre_entry = entry
             row += 1
 
         ttk.Label(form_frame, text="Tipo", style="FormLabel.TLabel").grid(
@@ -860,6 +769,12 @@ class ConfigFrame(ttk.Frame):
         self.disc_porcentaje.set("")
         self.disc_tipo.set("Docena")
 
+    def start_new_discount(self):
+        self.reset_discount_form()
+        self.disc_tree.selection_remove(self.disc_tree.selection())
+        self.disc_tree.focus("")
+        self.disc_nombre_entry.focus_set()
+
     def save_discount(self):
         """Guarda un descuento (nuevo o actualizado)."""
         nombre = self.disc_nombre.get().strip()
@@ -886,7 +801,7 @@ class ConfigFrame(ttk.Frame):
             return
 
         messagebox.showinfo(
-            "Exito",
+            "Éxito",
             "Descuento actualizado." if self.disc_id.get() else "Descuento agregado.",
             parent=self._parent(),
         )
@@ -908,7 +823,7 @@ class ConfigFrame(ttk.Frame):
             except RepositoryError as exc:
                 messagebox.showerror("Error", f"No se pudo eliminar el descuento.\n\n{exc}", parent=self._parent())
                 return
-            messagebox.showinfo("Exito", "Descuento eliminado.", parent=self._parent())
+            messagebox.showinfo("Éxito", "Descuento eliminado.", parent=self._parent())
             self.load_discounts()
             self.reset_discount_form()
 
@@ -920,38 +835,14 @@ class ConfigFrame(ttk.Frame):
         """Carga todas las configuraciones del recibo."""
         render_settings = load_receipt_render_settings(self.db.get_config)
         company = render_settings["empresa"]
-        labels = render_settings["labels"]
-
-        self._template_content = str(
-            render_settings.get("template_html") or self.repository.default_receipt_template()
-        )
         self.company_name_var.set(company["nombre"])
         self.company_rtn_var.set(company["rtn"])
         self.company_tel_var.set(company["tel"])
         self.company_email_var.set(company["email"])
         self.company_logo_var.set(company["logo_url"])
-        self.receipt_title_var.set(labels["DOC_TITLE"])
-        self.receipt_order_exempt_var.set(labels["ORDER_EXEMPT_LABEL"])
-        self.receipt_exempt_register_var.set(labels["EXEMPT_REGISTER_LABEL"])
-        self.receipt_discounts_var.set(labels["DISCOUNTS_LABEL"])
-        self.receipt_summary_title_var.set(labels["SUMMARY_HEADER"])
-        self.receipt_amount_label_var.set(labels["LABEL_MONTO_RECIBIDO"])
-        self.receipt_change_label_var.set(labels["LABEL_VUELTO"])
-        self.receipt_observations_label_var.set(labels["LABEL_OBSERVACIONES"])
-        self.receipt_copy_label_var.set(labels["COPY_LABEL"])
-        self.receipt_thanks_var.set(labels["THANK_YOU_MESSAGE"])
         return {
             "company_address": company["direccion"],
-            "observaciones": str(render_settings.get("observaciones") or ""),
         }
-
-    def _load_stored_receipt_template(self):
-        """Devuelve la plantilla guardada o la base por defecto solo si no existe ninguna."""
-        stored_template = self.db.get_config("recibo_template", "")
-        template_text = str(stored_template or "")
-        if template_text.strip():
-            return template_text
-        return self.repository.default_receipt_template()
 
     def _set_text_widget_value(self, widget, value):
         """Sincroniza el contenido de un Text con la configuración persistida."""
@@ -964,10 +855,6 @@ class ConfigFrame(ttk.Frame):
 
         if hasattr(self, "company_address_text"):
             self._set_text_widget_value(self.company_address_text, settings["company_address"])
-        if hasattr(self, "receipt_notes_text"):
-            self._set_text_widget_value(self.receipt_notes_text, settings["observaciones"])
-        if hasattr(self, "template_text"):
-            self._set_text_widget_value(self.template_text, self._template_content)
 
     def _bind_receipt_preview_updates(self):
         """Vincula todas las variables para actualizar el preview."""
@@ -977,21 +864,10 @@ class ConfigFrame(ttk.Frame):
             self.company_tel_var,
             self.company_email_var,
             self.company_logo_var,
-            self.receipt_title_var,
-            self.receipt_order_exempt_var,
-            self.receipt_exempt_register_var,
-            self.receipt_discounts_var,
-            self.receipt_summary_title_var,
-            self.receipt_amount_label_var,
-            self.receipt_change_label_var,
-            self.receipt_observations_label_var,
-            self.receipt_copy_label_var,
-            self.receipt_thanks_var,
         ):
             variable.trace_add("write", self._on_receipt_settings_changed)
 
         self.company_address_text.bind("<KeyRelease>", self._on_receipt_text_changed)
-        self.receipt_notes_text.bind("<KeyRelease>", self._on_receipt_text_changed)
 
     def _on_receipt_settings_changed(self, *_args):
         """Callback cuando cambian las configuraciones."""
@@ -1012,28 +888,6 @@ class ConfigFrame(ttk.Frame):
             "email": self.company_email_var.get().strip() or "info@techsystems.hn",
             "logo_url": self.company_logo_var.get().strip(),
         }
-
-    def _preview_labels(self):
-        """Devuelve las etiquetas del recibo para la vista previa."""
-        defaults = default_receipt_labels()
-        return {
-            "DOC_TITLE": self.receipt_title_var.get().strip() or defaults["DOC_TITLE"],
-            "ORDER_EXEMPT_LABEL": self.receipt_order_exempt_var.get().strip() or defaults["ORDER_EXEMPT_LABEL"],
-            "EXEMPT_REGISTER_LABEL": self.receipt_exempt_register_var.get().strip() or defaults["EXEMPT_REGISTER_LABEL"],
-            "DISCOUNTS_LABEL": self.receipt_discounts_var.get().strip() or defaults["DISCOUNTS_LABEL"],
-            "SUMMARY_HEADER": self.receipt_summary_title_var.get().strip() or defaults["SUMMARY_HEADER"],
-            "LABEL_MONTO_RECIBIDO": self.receipt_amount_label_var.get().strip() or defaults["LABEL_MONTO_RECIBIDO"],
-            "LABEL_VUELTO": self.receipt_change_label_var.get().strip() or defaults["LABEL_VUELTO"],
-            "LABEL_OBSERVACIONES": self.receipt_observations_label_var.get().strip() or defaults["LABEL_OBSERVACIONES"],
-            "COPY_LABEL": self.receipt_copy_label_var.get().strip() or defaults["COPY_LABEL"],
-            "THANK_YOU_MESSAGE": self.receipt_thanks_var.get().strip() or defaults["THANK_YOU_MESSAGE"],
-        }
-
-    def _current_template_content(self):
-        """Obtiene el contenido actual de la plantilla."""
-        if self.full_template_edit_unlocked:
-            self._template_content = self.template_text.get("1.0", "end-1c")
-        return self._template_content or self.repository.default_receipt_template()
 
     def _preview_number_to_words(self, number):
         """Convierte números a letras para la vista previa."""
@@ -1071,9 +925,7 @@ class ConfigFrame(ttk.Frame):
                 empresa=self._preview_company(),
                 number_to_words=self._preview_number_to_words,
                 tax_included=True,
-                observaciones=self.receipt_notes_text.get("1.0", "end-1c").strip(),
                 amount_received=20.0,
-                labels=self._preview_labels(),
             )
             self._render_visual_receipt_preview(view_model)
         except Exception as e:
@@ -1157,8 +1009,6 @@ class ConfigFrame(ttk.Frame):
         table.grid(row=row, column=0, sticky="ew", pady=(0, 10))
         row += 1
 
-        total_value = next(value for label, value in view_model["summary_rows"] if label == "TOTAL")
-        add_label(f"TOTAL:    L {total_value:.2f}", bold=True, anchor="w", pady=(0, 4))
         add_label(view_model["monto_letras"], bold=True, anchor="w", pady=(0, 6))
         add_label(labels["ORDER_EXEMPT_LABEL"], anchor="w")
         add_label(labels["EXEMPT_REGISTER_LABEL"], anchor="w")
@@ -1175,20 +1025,15 @@ class ConfigFrame(ttk.Frame):
         taxes_title.grid(row=row, column=0, sticky="w", pady=(0, 2))
         row += 1
 
-        tax_rows = [("Sub Total", float(view_model["subtotal_base"]))] + view_model["summary_rows"]
-        for label, value in tax_rows:
+        for label, value in view_model["summary_rows"]:
             add_label(f"{label:<22} L {value:>7.2f}", anchor="w")
 
         for label, value in view_model["payment_rows"]:
             add_label(f"{label}:    L {value:.2f}", anchor="w")
-        add_label(f"{labels['LABEL_OBSERVACIONES']}: {view_model['observaciones'] or ''}", anchor="w", pady=(0, 8))
+        if view_model["observaciones"]:
+            add_label(f"{labels['LABEL_OBSERVACIONES']}: {view_model['observaciones']}", anchor="w", pady=(0, 8))
         add_label(labels["COPY_LABEL"], pady=(2, 0))
         add_label(labels["THANK_YOU_MESSAGE"], pady=(0, 0))
-
-    def on_template_text_changed(self, _event=None):
-        """Maneja cambios en el texto de la plantilla avanzada."""
-        self._template_content = self.template_text.get("1.0", "end-1c")
-        self.refresh_receipt_preview()
 
     def preview_receipt(self):
         """Abre una vista previa real en el navegador."""
@@ -1203,10 +1048,7 @@ class ConfigFrame(ttk.Frame):
                 cliente=None,
                 metodo_pago="EFECTIVO",
                 mode="ticket",
-                template_html=self._current_template_content(),
                 empresa=self._preview_company(),
-                observaciones=self.receipt_notes_text.get("1.0", "end-1c").strip(),
-                labels=self._preview_labels(),
                 number_to_words=self._preview_number_to_words,
             )
             with tempfile.NamedTemporaryFile(mode="w", suffix=".html", 
@@ -1224,86 +1066,21 @@ class ConfigFrame(ttk.Frame):
                                 parent=self._parent())
 
     def save_receipt_template(self):
-        """Guarda toda la configuración de la plantilla."""
-        template_content = self._current_template_content().strip()
-        if not template_content:
-            messagebox.showerror("Error", "La plantilla no puede estar vacía.", parent=self._parent())
-            return
-
-        labels = self._preview_labels()
+        """Guarda únicamente la información editable del negocio."""
         try:
-            self.repository.set_receipt_template(template_content)
             self.db.set_config("empresa_nombre", self.company_name_var.get().strip())
             self.db.set_config("empresa_rtn", self.company_rtn_var.get().strip())
             self.db.set_config("empresa_tel", self.company_tel_var.get().strip())
             self.db.set_config("empresa_email", self.company_email_var.get().strip())
             self.db.set_config("empresa_logo_url", self.company_logo_var.get().strip())
             self.db.set_config("empresa_direccion", self.company_address_text.get("1.0", tk.END).strip())
-            self.db.set_config("recibo_observaciones", self.receipt_notes_text.get("1.0", tk.END).strip())
-            self.db.set_config("recibo_doc_title", labels["DOC_TITLE"])
-            self.db.set_config("recibo_label_orden_exenta", labels["ORDER_EXEMPT_LABEL"])
-            self.db.set_config("recibo_label_registro_exento", labels["EXEMPT_REGISTER_LABEL"])
-            self.db.set_config("recibo_label_descuentos", labels["DISCOUNTS_LABEL"])
-            self.db.set_config("recibo_summary_title", labels["SUMMARY_HEADER"])
-            self.db.set_config("recibo_label_monto_recibido", labels["LABEL_MONTO_RECIBIDO"])
-            self.db.set_config("recibo_label_vuelto", labels["LABEL_VUELTO"])
-            self.db.set_config("recibo_label_observaciones", labels["LABEL_OBSERVACIONES"])
-            self.db.set_config("recibo_copy_label", labels["COPY_LABEL"])
-            self.db.set_config("recibo_thanks_message", labels["THANK_YOU_MESSAGE"])
             
             messagebox.showinfo(
                 "Éxito", 
-                "La plantilla visual quedó guardada y sincronizada con Ventas.",
+                "La información del negocio quedó guardada y sincronizada con Ventas.",
                 parent=self._parent()
             )
         except Exception as exc:
             messagebox.showerror("Error", f"No se pudo guardar la plantilla.\n\n{exc}", 
                                 parent=self._parent())
 
-    def restore_default_template(self):
-        """Restaura la plantilla por defecto."""
-        if not messagebox.askyesno("Confirmar", "Restaurar la plantilla original del recibo?", 
-                                   parent=self._parent()):
-            return
-
-        defaults = default_receipt_labels()
-        self._template_content = self.repository.default_receipt_template()
-        self.receipt_title_var.set(defaults["DOC_TITLE"])
-        self.receipt_order_exempt_var.set(defaults["ORDER_EXEMPT_LABEL"])
-        self.receipt_exempt_register_var.set(defaults["EXEMPT_REGISTER_LABEL"])
-        self.receipt_discounts_var.set(defaults["DISCOUNTS_LABEL"])
-        self.receipt_summary_title_var.set(defaults["SUMMARY_HEADER"])
-        self.receipt_amount_label_var.set(defaults["LABEL_MONTO_RECIBIDO"])
-        self.receipt_change_label_var.set(defaults["LABEL_VUELTO"])
-        self.receipt_observations_label_var.set(defaults["LABEL_OBSERVACIONES"])
-        self.receipt_copy_label_var.set(defaults["COPY_LABEL"])
-        self.receipt_thanks_var.set(defaults["THANK_YOU_MESSAGE"])
-        
-        if self.full_template_edit_unlocked:
-            self.template_text.delete("1.0", tk.END)
-            self.template_text.insert("1.0", self._template_content)
-            
-        self.refresh_receipt_preview()
-        messagebox.showinfo("Éxito", "Se restauró la base original del recibo.", parent=self._parent())
-
-    def toggle_full_template_edit(self):
-        """Alterna entre modo protegido y edición total."""
-        self.full_template_edit_unlocked = not self.full_template_edit_unlocked
-        
-        if self.full_template_edit_unlocked:
-            self.template_lock_var.set(
-                "🔓 Edición total habilitada: ahora puedes modificar toda la plantilla estructurada del recibo."
-            )
-            self.unlock_template_btn.configure(text="🔒 Volver a edición protegida")
-            self.template_text.delete("1.0", tk.END)
-            self.template_text.insert("1.0", self._template_content)
-            self.advanced_card.grid()
-        else:
-            self._template_content = self.template_text.get("1.0", "end-1c")
-            self.template_lock_var.set(
-                "🔒 Modo protegido activo: la estructura, productos, cálculos e impuestos siguen bloqueados."
-            )
-            self.unlock_template_btn.configure(text="🔓 Desbloquear edición total")
-            self.advanced_card.grid_remove()
-            
-        self.refresh_receipt_preview()

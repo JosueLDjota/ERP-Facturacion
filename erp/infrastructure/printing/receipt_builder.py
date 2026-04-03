@@ -32,26 +32,12 @@ DEFAULT_RECEIPT_LABELS = {
     "ORDER_EXEMPT_LABEL": "Orden de Compra Exenta:",
     "EXEMPT_REGISTER_LABEL": "Constancia Registro Exento:",
     "DISCOUNTS_LABEL": "Desc. y Rebajas Otorgados:",
-    "SUMMARY_HEADER": "RESUMEN DE IMPUESTOS",
+    "SUMMARY_HEADER": "RESUMEN FISCAL",
     "LABEL_MONTO_RECIBIDO": "Monto recibido",
     "LABEL_VUELTO": "Vuelto",
     "LABEL_OBSERVACIONES": "Observaciones",
     "COPY_LABEL": "Original - Cliente",
     "THANK_YOU_MESSAGE": "Gracias por su compra",
-}
-
-
-LABEL_CONFIG_KEYS = {
-    "DOC_TITLE": "recibo_doc_title",
-    "ORDER_EXEMPT_LABEL": "recibo_label_orden_exenta",
-    "EXEMPT_REGISTER_LABEL": "recibo_label_registro_exento",
-    "DISCOUNTS_LABEL": "recibo_label_descuentos",
-    "SUMMARY_HEADER": "recibo_summary_title",
-    "LABEL_MONTO_RECIBIDO": "recibo_label_monto_recibido",
-    "LABEL_VUELTO": "recibo_label_vuelto",
-    "LABEL_OBSERVACIONES": "recibo_label_observaciones",
-    "COPY_LABEL": "recibo_copy_label",
-    "THANK_YOU_MESSAGE": "recibo_thanks_message",
 }
 
 
@@ -64,16 +50,7 @@ def default_receipt_labels() -> dict[str, str]:
 
 
 def load_receipt_labels(get_config) -> dict[str, str]:
-    labels = default_receipt_labels()
-    if not callable(get_config):
-        return labels
-
-    for label_key, config_key in LABEL_CONFIG_KEYS.items():
-        stored_value = get_config(config_key, labels[label_key])
-        text = str(stored_value or "").strip()
-        if text:
-            labels[label_key] = text
-    return labels
+    return default_receipt_labels()
 
 
 def load_receipt_company(get_config) -> dict[str, str]:
@@ -97,19 +74,11 @@ def load_receipt_company(get_config) -> dict[str, str]:
 
 
 def load_receipt_render_settings(get_config) -> dict[str, object]:
-    template_html = None
-    observations = ""
-    if callable(get_config):
-        template_value = str(get_config("recibo_template", "") or "").strip()
-        if template_value:
-            template_html = template_value
-        observations = str(get_config("recibo_observaciones", "") or "").strip()
-
     return {
         "empresa": load_receipt_company(get_config),
         "labels": load_receipt_labels(get_config),
-        "template_html": template_html,
-        "observaciones": observations,
+        "template_html": None,
+        "observaciones": "",
     }
 
 
@@ -153,6 +122,30 @@ def _build_item_rows(invoice, mode: str) -> tuple[str, str]:
     return "".join(html_rows), "".join(text_rows)
 
 
+def _build_fiscal_summary_rows(invoice) -> list[tuple[str, float]]:
+    rows: list[tuple[str, float]] = []
+
+    exento = float(invoice.exento)
+    base_15 = float(invoice.base_gravada_15)
+    impuesto_15 = float(invoice.impuesto_15)
+    base_18 = float(invoice.base_gravada_18)
+    impuesto_18 = float(invoice.impuesto_18)
+    total = float(invoice.total)
+
+    if exento > 0:
+        rows.append(("Exento", exento))
+    if base_15 > 0:
+        rows.append(("Base Gravada 15%", base_15))
+    if impuesto_15 > 0:
+        rows.append(("Impuesto 15%", impuesto_15))
+    if base_18 > 0:
+        rows.append(("Base Gravada 18%", base_18))
+    if impuesto_18 > 0:
+        rows.append(("Impuesto 18%", impuesto_18))
+    rows.append(("TOTAL", total))
+    return rows
+
+
 def _build_receipt_context(
     *,
     venta_id,
@@ -173,8 +166,6 @@ def _build_receipt_context(
         company.update(empresa)
 
     merged_labels = default_receipt_labels()
-    if labels:
-        merged_labels.update({key: str(value) for key, value in labels.items() if value is not None})
 
     invoice = calculate_invoice_totals(
         items,
@@ -218,7 +209,6 @@ def _build_receipt_context(
         "company": company,
         "labels": merged_labels,
         "invoice": invoice,
-        "subtotal_base": float(invoice.exento) + float(invoice.base_gravada_15) + float(invoice.base_gravada_18),
         "mode": mode,
         "venta_id": str(venta_id),
         "fecha": str(fecha),
@@ -276,7 +266,6 @@ def build_receipt_view_model(
         "cliente_nombre": context["cliente_nombre"],
         "monto_letras": context["monto_letras"],
         "observaciones": context["observaciones"],
-        "subtotal_base": float(context["subtotal_base"]),
         "items": [
             {
                 "cantidad": float(line.cantidad),
@@ -287,14 +276,7 @@ def build_receipt_view_model(
             }
             for line in invoice.lineas
         ],
-        "summary_rows": [
-            ("Exento", float(invoice.exento)),
-            ("Gravado 15%", float(invoice.base_gravada_15)),
-            ("Gravado 18%", float(invoice.base_gravada_18)),
-            ("Impuesto 15%", float(invoice.impuesto_15)),
-            ("Impuesto 18%", float(invoice.impuesto_18)),
-            ("TOTAL", float(invoice.total)),
-        ],
+        "summary_rows": _build_fiscal_summary_rows(invoice),
         "payment_rows": [
             (context["labels"]["LABEL_MONTO_RECIBIDO"], float(invoice.monto_recibido)),
             (context["labels"]["LABEL_VUELTO"], float(invoice.vuelto)),
@@ -325,7 +307,7 @@ def _render_template(template_html: str, context: dict[str, object]) -> str:
         "CLIENTE_TELEFONO": escape(context["cliente_telefono"]),
         "CLIENTE_DIRECCION": escape(context["cliente_direccion"]),
         "TOTAL": f"{float(invoice.total):.2f}",
-        "SUBTOTAL": f"{float(context['subtotal_base']):.2f}",
+        "SUBTOTAL": f"{float(invoice.total):.2f}",
         "MONTO_PAGADO": f"{float(invoice.monto_recibido):.2f}",
         "VUELTO": f"{float(invoice.vuelto):.2f}",
         "EXENTO": f"{float(invoice.exento):.2f}",
@@ -347,7 +329,7 @@ def _render_template(template_html: str, context: dict[str, object]) -> str:
         "ITEMS_PLACEHOLDER": items_rows_html,
         "ITEMS_ROWS": items_rows_html,
         "MONTO_RECIBIDO": f"{float(invoice.monto_recibido):.2f}",
-        "SUB_TOTAL": f"{float(context['subtotal_base']):.2f}",
+        "SUB_TOTAL": f"{float(invoice.total):.2f}",
     }
 
     rendered = template_html
@@ -369,6 +351,18 @@ def _default_receipt_html(context: dict[str, object]) -> str:
     copy_label = labels["COPY_LABEL"]
     thanks = labels["THANK_YOU_MESSAGE"]
     observations = context["observaciones"]
+    summary_rows_html = "".join(
+        f"<tr><td>{escape(label)}</td><td>L {value:.2f}</td></tr>"
+        for label, value in _build_fiscal_summary_rows(invoice)
+    )
+    observations_html = (
+        f"<p><strong>{escape(labels['LABEL_OBSERVACIONES'])}:</strong> {escape(observations)}</p>"
+        if observations
+        else ""
+    )
+    payment_rows_html = f"<div><strong>{escape(labels['LABEL_MONTO_RECIBIDO'])}:</strong> L {invoice.monto_recibido:.2f}</div>"
+    if context["metodo_pago"] == "EFECTIVO":
+        payment_rows_html += f"<div><strong>{escape(labels['LABEL_VUELTO'])}:</strong> L {invoice.vuelto:.2f}</div>"
 
     return f"""
 <html>
@@ -382,7 +376,6 @@ def _default_receipt_html(context: dict[str, object]) -> str:
             font-size: {font_size};
             margin: 0 auto;
             background: #fff;
-            color: #222;
         }}
         .header, .footer {{
             text-align: center;
@@ -391,7 +384,6 @@ def _default_receipt_html(context: dict[str, object]) -> str:
         .title {{
             font-size: 1.2em;
             font-weight: bold;
-            color: #dc3545;
         }}
         table {{
             width: 100%;
@@ -412,7 +404,6 @@ def _default_receipt_html(context: dict[str, object]) -> str:
         .observaciones {{
             margin-top: 10px;
             font-size: 0.95em;
-            color: #555;
         }}
     </style>
 </head>
@@ -449,24 +440,17 @@ def _default_receipt_html(context: dict[str, object]) -> str:
 
     <div style="font-weight: bold; margin: 10px 0 6px 0;">{escape(labels["SUMMARY_HEADER"])}</div>
     <table class="totals">
-        <tr><td>Exento</td><td>L {invoice.exento:.2f}</td></tr>
-        <tr><td>Base Gravada 15%</td><td>L {invoice.base_gravada_15:.2f}</td></tr>
-        <tr><td>Base Gravada 18%</td><td>L {invoice.base_gravada_18:.2f}</td></tr>
-        <tr><td>Impuesto 15%</td><td>L {invoice.impuesto_15:.2f}</td></tr>
-        <tr><td>Impuesto 18%</td><td>L {invoice.impuesto_18:.2f}</td></tr>
-        <tr><td>TOTAL</td><td>L {invoice.total:.2f}</td></tr>
+        {summary_rows_html}
     </table>
 
-    <div><strong>Total cobrado:</strong> L {invoice.total:.2f}</div>
-    <div><strong>{escape(labels["LABEL_MONTO_RECIBIDO"])}:</strong> L {invoice.monto_recibido:.2f}</div>
-    {"<div><strong>%s:</strong> L %.2f</div>" % (escape(labels["LABEL_VUELTO"]), invoice.vuelto) if context["metodo_pago"] == "EFECTIVO" else ""}
+    {payment_rows_html}
 
     <div class="observaciones">
         <p><strong>SON:</strong> {escape(context["monto_letras"])}</p>
         <p>{escape(labels["ORDER_EXEMPT_LABEL"])}</p>
         <p>{escape(labels["EXEMPT_REGISTER_LABEL"])}</p>
         <p>{escape(labels["DISCOUNTS_LABEL"])}</p>
-        <p><strong>{escape(labels["LABEL_OBSERVACIONES"])}:</strong> {escape(observations or "-")}</p>
+        {observations_html}
     </div>
 
     <div class="footer">

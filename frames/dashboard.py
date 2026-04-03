@@ -1,4 +1,4 @@
-"""
+﻿"""
 frames/dashboard.py
 Dashboard ejecutivo con KPIs y graficas de negocio.
 """
@@ -139,14 +139,8 @@ class DashboardFrame(ttk.Frame):
         header.grid(row=0, column=0, sticky="ew", pady=(0, 12))
         header.columnconfigure(0, weight=1)
 
-        ttk.Label(header, text="Resumen operativo", style="Header.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Label(
-            header,
-            text="Indicadores de ventas, inventario y tendencia para decisiones rapidas.",
-            style="Muted.TLabel",
-        ).grid(row=1, column=0, sticky="w", pady=(2, 0))
         ttk.Button(header, text="Actualizar", style="Primary.TButton", command=self.refresh_dashboard).grid(
-            row=0, column=1, rowspan=2, sticky="e"
+            row=0, column=0, sticky="e"
         )
 
         self.kpi_row = ttk.Frame(self.content, style="App.TFrame")
@@ -456,3 +450,6 @@ class DashboardFrame(ttk.Frame):
         self._draw_daily_chart()
         self._render_stock_table()
         self._render_recent_sales()
+
+
+

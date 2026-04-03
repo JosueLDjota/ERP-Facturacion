@@ -107,7 +107,12 @@ def calculate_invoice_totals(
         if descuento_pct > Decimal("1"):
             descuento_pct = descuento_pct / Decimal("100")
 
-        total_linea_entrada = precio_unitario * cantidad * (Decimal("1") - descuento_pct)
+        # La linea monetaria visible del POS siempre opera a 2 decimales.
+        # Redondeamos aqui para que descuentos, cobro y resumen fiscal cierren
+        # con el mismo valor que ve el usuario antes de guardar.
+        total_linea_entrada = _round_money(
+            precio_unitario * cantidad * (Decimal("1") - descuento_pct)
+        )
         tax_rate = _resolve_tax_rate(item)
 
         line_exento = ZERO
@@ -125,41 +130,45 @@ def calculate_invoice_totals(
             if tax_included:
                 # Cuando el precio ya incluye ISV, se separa la base imponible
                 # dividiendo el total entre 1.15 y la diferencia queda como impuesto.
-                line_base_gravada_15 = total_linea_entrada / (Decimal("1") + TAX_RATE_15)
-                line_impuesto_15 = total_linea_entrada - line_base_gravada_15
+                line_base_gravada_15 = _round_money(
+                    total_linea_entrada / (Decimal("1") + TAX_RATE_15)
+                )
+                line_impuesto_15 = _round_money(total_linea_entrada - line_base_gravada_15)
                 subtotal_base_linea = line_base_gravada_15
             else:
                 line_base_gravada_15 = total_linea_entrada
-                line_impuesto_15 = line_base_gravada_15 * TAX_RATE_15
+                line_impuesto_15 = _round_money(line_base_gravada_15 * TAX_RATE_15)
                 subtotal_base_linea = line_base_gravada_15
-                total_linea = line_base_gravada_15 + line_impuesto_15
+                total_linea = _round_money(line_base_gravada_15 + line_impuesto_15)
         elif tax_rate == TAX_RATE_18:
             if tax_included:
                 # Cuando el precio ya incluye ISV, se separa la base imponible
                 # dividiendo el total entre 1.18 y la diferencia queda como impuesto.
-                line_base_gravada_18 = total_linea_entrada / (Decimal("1") + TAX_RATE_18)
-                line_impuesto_18 = total_linea_entrada - line_base_gravada_18
+                line_base_gravada_18 = _round_money(
+                    total_linea_entrada / (Decimal("1") + TAX_RATE_18)
+                )
+                line_impuesto_18 = _round_money(total_linea_entrada - line_base_gravada_18)
                 subtotal_base_linea = line_base_gravada_18
             else:
                 line_base_gravada_18 = total_linea_entrada
-                line_impuesto_18 = line_base_gravada_18 * TAX_RATE_18
+                line_impuesto_18 = _round_money(line_base_gravada_18 * TAX_RATE_18)
                 subtotal_base_linea = line_base_gravada_18
-                total_linea = line_base_gravada_18 + line_impuesto_18
+                total_linea = _round_money(line_base_gravada_18 + line_impuesto_18)
         else:
             if tax_included:
-                base = total_linea_entrada / (Decimal("1") + tax_rate)
-                impuesto = total_linea_entrada - base
+                base = _round_money(total_linea_entrada / (Decimal("1") + tax_rate))
+                impuesto = _round_money(total_linea_entrada - base)
                 line_base_gravada_15 = base
                 line_impuesto_15 = impuesto
                 subtotal_base_linea = base
             else:
                 line_base_gravada_15 = total_linea_entrada
-                line_impuesto_15 = line_base_gravada_15 * tax_rate
+                line_impuesto_15 = _round_money(line_base_gravada_15 * tax_rate)
                 subtotal_base_linea = line_base_gravada_15
-                total_linea = line_base_gravada_15 + line_impuesto_15
+                total_linea = _round_money(line_base_gravada_15 + line_impuesto_15)
 
         total_lineas_entrada += total_linea_entrada
-        base_imponible_total += subtotal_base_linea + line_exento
+        base_imponible_total += subtotal_base_linea
         exento += line_exento
         base_gravada_15 += line_base_gravada_15
         base_gravada_18 += line_base_gravada_18
@@ -175,7 +184,7 @@ def calculate_invoice_totals(
                 precio_unitario=float(_round_money(precio_unitario)),
                 descuento_porcentaje=float(descuento_pct),
                 subtotal_linea=float(_round_money(total_linea_entrada)),
-                subtotal_base=float(_round_money(subtotal_base_linea + line_exento)),
+                subtotal_base=float(_round_money(subtotal_base_linea)),
                 exento=float(line_exento),
                 base_gravada_15=float(_round_money(line_base_gravada_15)),
                 base_gravada_18=float(_round_money(line_base_gravada_18)),

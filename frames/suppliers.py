@@ -31,19 +31,16 @@ class SupplierFrame(ttk.Frame):
     def _build_ui(self):
         self.columnconfigure(0, weight=7)
         self.columnconfigure(1, weight=4)
-        self.rowconfigure(1, weight=1)
+        self.rowconfigure(0, weight=1)
 
-        ttk.Label(self, text="Gestión de proveedores", style="Header.TLabel").grid(
-            row=0, column=0, columnspan=2, sticky="w", pady=(0, 12)
-        )
 
         self.list_frame = ttk.LabelFrame(self, text="Listado de proveedores", style="Card.TLabelframe")
-        self.list_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 8))
+        self.list_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
         self.list_frame.columnconfigure(0, weight=1)
         self.list_frame.rowconfigure(0, weight=1)
 
         self.form_frame = ttk.LabelFrame(self, text="Formulario de proveedor", style="Card.TLabelframe")
-        self.form_frame.grid(row=1, column=1, sticky="nsew")
+        self.form_frame.grid(row=0, column=1, sticky="nsew")
         self.form_frame.columnconfigure(1, weight=1)
 
         self._create_supplier_list()
@@ -89,7 +86,7 @@ class SupplierFrame(ttk.Frame):
         btn_frame = ttk.Frame(self.list_frame, style="Surface.TFrame")
         btn_frame.grid(row=1, column=0, sticky="ew", pady=(6, 0))
 
-        ttk.Button(btn_frame, text="Nuevo proveedor", style="Secondary.TButton", command=self.reset_form).pack(
+        ttk.Button(btn_frame, text="Nuevo proveedor", style="Secondary.TButton", command=self.start_new_supplier).pack(
             side="left", padx=(0, 6)
         )
         ttk.Button(btn_frame, text="Eliminar", style="Danger.TButton", command=self.delete_supplier).pack(
@@ -114,9 +111,12 @@ class SupplierFrame(ttk.Frame):
             ttk.Label(self.form_frame, text=label_text, style="FormLabel.TLabel").grid(
                 row=row, column=0, sticky="w", padx=4, pady=8
             )
-            ttk.Entry(self.form_frame, textvariable=var).grid(
+            entry = ttk.Entry(self.form_frame, textvariable=var)
+            entry.grid(
                 row=row, column=1, sticky="ew", padx=4, pady=8
             )
+            if row == 0:
+                self.nombre_entry = entry
             row += 1
 
         ttk.Button(
@@ -147,6 +147,12 @@ class SupplierFrame(ttk.Frame):
         self.nombre.set("")
         self.contacto.set("")
         self.telefono.set("")
+
+    def start_new_supplier(self):
+        self.reset_form()
+        self.tree.selection_remove(self.tree.selection())
+        self.tree.focus("")
+        self.nombre_entry.focus_set()
 
     def save_supplier(self):
         nombre = self.nombre.get().strip()

@@ -1386,7 +1386,6 @@ class DBManager:
             background: #f4f6f8;
             margin: 0;
             padding: 18px;
-            color: #111827;
         }
         .receipt {
             width: 360px;
@@ -1398,7 +1397,6 @@ class DBManager:
         }
         .center { text-align: center; }
         .title { font-size: 18px; font-weight: bold; letter-spacing: 1px; margin: 10px 0 6px 0; }
-        .muted { color: #4b5563; }
         table { width: 100%; border-collapse: collapse; font-size: 12px; }
         th, td { padding: 4px 2px; border-bottom: 1px dashed #d1d5db; }
         th { text-align: left; font-weight: bold; }
@@ -1437,7 +1435,6 @@ class DBManager:
             </table>
         </div>
 
-        <div class="spacer"><strong>TOTAL:</strong> L {{TOTAL}}</div>
         <div><strong>{{MONTO_LETRAS}}</strong></div>
         <div class="spacer">{{ORDER_EXEMPT_LABEL}}</div>
         <div>{{EXEMPT_REGISTER_LABEL}}</div>
@@ -1445,11 +1442,10 @@ class DBManager:
 
         <div class="section-title">Concepto&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Total</div>
         <table class="totals">
-            <tr><td>Sub Total</td><td style="text-align:right;">L {{SUBTOTAL}}</td></tr>
             <tr><td>Exento</td><td style="text-align:right;">L {{EXENTO}}</td></tr>
-            <tr><td>Gravado 15%</td><td style="text-align:right;">L {{BASE_GRAVADA_15}}</td></tr>
-            <tr><td>Gravado 18%</td><td style="text-align:right;">L {{BASE_GRAVADA_18}}</td></tr>
+            <tr><td>Base Gravada 15%</td><td style="text-align:right;">L {{BASE_GRAVADA_15}}</td></tr>
             <tr><td>Impuesto 15%</td><td style="text-align:right;">L {{IMPUESTO_15}}</td></tr>
+            <tr><td>Base Gravada 18%</td><td style="text-align:right;">L {{BASE_GRAVADA_18}}</td></tr>
             <tr><td>Impuesto 18%</td><td style="text-align:right;">L {{IMPUESTO_18}}</td></tr>
             <tr><td><strong>TOTAL:</strong></td><td style="text-align:right;"><strong>L {{TOTAL}}</strong></td></tr>
         </table>

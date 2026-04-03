@@ -22,8 +22,14 @@ from tkinter import messagebox, ttk
 from PIL import Image, ImageTk
 
 from database import DBManager
+from erp.data.repositories.backup_repository import BackupRepository
 from erp.data.repositories.user_repository import UserRepository
-from erp.domain.services.access_control import allowed_sections_for_role, can_access_section
+from erp.domain.services.access_control import (
+    CONFIG_SECTION,
+    allowed_sections_for_role,
+    can_access_section,
+)
+from erp.domain.services.backup_service import BackupService
 from erp.domain.use_cases.auth.login_user import LoginUser
 from erp.infrastructure.io.file_manager import FileManager
 from erp.ui.frames import (
@@ -164,6 +170,8 @@ class ERPApp(tk.Tk):
         try:
             self.db = DBManager()
             self.user_repository = UserRepository(self.db)
+            self.backup_repository = BackupRepository(self.db)
+            self.backup_service = BackupService(self.db, self.backup_repository)
             self.login_user = LoginUser(self.user_repository)
             self.file_manager = FileManager(self.db)
             self.notification_manager = NotificationManager(self, self.db)
@@ -448,51 +456,21 @@ class ERPApp(tk.Tk):
             
             self.container = ttk.Frame(self, style="App.TFrame")
             self.container.pack(fill="both", expand=True)
-            self.container.columnconfigure(1, weight=1)
-            self.container.rowconfigure(0, weight=1)
+            self.container.columnconfigure(0, weight=1)
+            self.container.rowconfigure(1, weight=1)
 
-            # Barra lateral
+            # Barra superior con navegacion principal
             self.nav_frame = ttk.Frame(
                 self.container,
-                width=AppConfig.SIDEBAR_WIDTH,
-                padding=18,
-                style="Sidebar.TFrame"
+                padding=(20, 14, 20, 12),
+                style="Topbar.TFrame"
             )
-            self.nav_frame.grid(row=0, column=0, sticky="ns")
-            self.nav_frame.grid_propagate(False)
-            self.nav_frame.columnconfigure(0, weight=1)
-
-            # Area de contenido
-            content_shell = ttk.Frame(self.container, style="App.TFrame")
-            content_shell.grid(row=0, column=1, sticky="nsew")
-            content_shell.rowconfigure(1, weight=1)
-            content_shell.columnconfigure(0, weight=1)
-
-            # Barra superior
-            topbar = ttk.Frame(content_shell, padding=(24, 18, 24, 12), style="Topbar.TFrame")
-            topbar.grid(row=0, column=0, sticky="ew")
-            topbar.columnconfigure(0, weight=1)
-
-            ttk.Label(topbar, text="Panel principal", style="Subheader.TLabel").grid(
-                row=0, column=0, sticky="w"
-            )
-            ttk.Label(topbar, textvariable=self.current_section, style="Muted.TLabel").grid(
-                row=1, column=0, sticky="w"
-            )
-            
-            # Boton de notificaciones
-            ttk.Button(
-                topbar,
-                text="🔔",
-                width=4,
-                command=self.notification_manager.show_notification_center,
-                style="Secondary.TButton",
-            ).grid(row=0, column=1, rowspan=2, sticky="e")
+            self.nav_frame.grid(row=0, column=0, sticky="ew")
 
             # Frame de contenido
             self.content_frame = ttk.Frame(
-                content_shell,
-                padding=(24, 14, 24, 24),
+                self.container,
+                padding=(24, 18, 24, 24),
                 style="App.TFrame"
             )
             self.content_frame.grid(row=1, column=0, sticky="nsew")
@@ -506,10 +484,46 @@ class ERPApp(tk.Tk):
             
             self.notification_manager.notify_system_info(f"v{AppConfig.APP_VERSION}")
             self._on_nav_click("Dashboard")
+            self.after(150, self._run_startup_backup_checks)
             
         except Exception as e:
             logger.error(f"Error al mostrar interfaz principal: {e}")
             raise
+
+    def _run_startup_backup_checks(self):
+        """Ejecuta respaldo automatico y alerta de vigencia al iniciar sesion."""
+        auto_result = None
+        try:
+            auto_result = self.backup_service.run_automatic_backup_if_due(trigger="startup")
+        except Exception as exc:
+            logger.error(f"Error al ejecutar respaldo automatico de inicio: {exc}")
+
+        if auto_result and auto_result.ok:
+            self.notification_manager.notify_system_info(
+                f"Respaldo automatico creado: {auto_result.file_name}",
+                level="info",
+            )
+        elif auto_result and not auto_result.ok:
+            logger.warning(f"No se pudo generar el respaldo automatico: {auto_result.message}")
+
+        try:
+            alert_status = self.backup_service.get_alert_status()
+        except Exception as exc:
+            logger.error(f"Error al verificar estado de respaldos: {exc}")
+            return
+
+        if alert_status.should_alert:
+            self._show_backup_alert(alert_status.message)
+
+    def _show_backup_alert(self, message):
+        """Muestra una alerta visible cuando no existe un respaldo reciente."""
+        self.notification_manager.notify_system_info(message, level="warning")
+        if messagebox.askyesno(
+            "Alerta de respaldos",
+            f"{message}\n\nDesea abrir Configuracion para crear o revisar un respaldo ahora?",
+            parent=self,
+        ):
+            self.open_backup_settings()
 
     def _start_stock_monitoring(self):
         """Inicia el monitoreo periodico de stock."""
@@ -539,22 +553,16 @@ class ERPApp(tk.Tk):
         self._stock_monitor_job = None
 
     def _build_sidebar(self):
-        """Construye la barra lateral de navegacion."""
+        """Construye la barra superior de navegacion principal."""
         try:
-            # Informacion del usuario
-            ttk.Label(self.nav_frame, text=AppConfig.APP_NAME, style="SidebarTitle.TLabel").grid(
-                row=0, column=0, sticky="w", pady=(4, 2)
-            )
-            ttk.Label(self.nav_frame, text=f"Usuario: {self.current_user[1]}", style="SidebarText.TLabel").grid(
-                row=1, column=0, sticky="w"
-            )
-            ttk.Label(self.nav_frame, text=f"Rol: {self.current_user[2]}", style="SidebarText.TLabel").grid(
-                row=2, column=0, sticky="w", pady=(0, 14)
-            )
+            for child in self.nav_frame.winfo_children():
+                child.destroy()
+            self.nav_widgets.clear()
+            self.nav_frame.columnconfigure(1, weight=1)
 
-            # Separador
-            separator = tk.Frame(self.nav_frame, height=1, bg="#1E3358")
-            separator.grid(row=3, column=0, sticky="ew", pady=(4, 12))
+            ttk.Label(self.nav_frame, text=AppConfig.APP_NAME, style="TopbarTitle.TLabel").grid(
+                row=0, column=0, sticky="w", padx=(0, 18)
+            )
 
             # Definicion de frames
             class NotificationsFrame(ttk.Frame):
@@ -569,7 +577,7 @@ class ERPApp(tk.Tk):
                 "Clientes": ClientsFrame,
                 "Productos": ProductFrame,
                 "Proveedores": SupplierFrame,
-                "Configuración": ConfigFrame,
+                CONFIG_SECTION: ConfigFrame,
                 "Notificaciones": NotificationsFrame,
             }
 
@@ -580,13 +588,11 @@ class ERPApp(tk.Tk):
                 "Clientes",
                 "Productos",
                 "Proveedores",
-                "Configuración",
+                CONFIG_SECTION,
             ]
 
-            nav_host = ttk.Frame(self.nav_frame, style="Sidebar.TFrame")
-            nav_host.grid(row=4, column=0, sticky="nsew")
-            nav_host.columnconfigure(0, weight=1)
-            self.nav_frame.rowconfigure(4, weight=1)
+            nav_host = ttk.Frame(self.nav_frame, style="Topbar.TFrame")
+            nav_host.grid(row=0, column=1, sticky="w")
 
             visible_sections = [section for section in nav_order if section in self.allowed_sections]
 
@@ -594,16 +600,31 @@ class ERPApp(tk.Tk):
                 button = ttk.Button(
                     nav_host,
                     text=section,
-                    style="Nav.TButton",
+                    style="TopbarNav.TButton",
                     command=lambda value=section: self._on_nav_click(value),
                 )
-                button.grid(row=idx, column=0, sticky="ew", pady=4)
+                button.pack(side="left", padx=(0, 8 if idx < len(visible_sections) - 1 else 0))
                 self.nav_widgets[section] = button
 
-            # Boton de cierre de sesion
-            bottom = ttk.Frame(self.nav_frame, style="Sidebar.TFrame")
-            bottom.grid(row=5, column=0, sticky="ew", pady=(14, 10))
-            ttk.Button(bottom, text="Cerrar sesion", command=self.logout, style="Danger.TButton").pack(fill="x")
+            actions = ttk.Frame(self.nav_frame, style="Topbar.TFrame")
+            actions.grid(row=0, column=2, sticky="e")
+            ttk.Label(
+                actions,
+                text=f"{self.current_user[1]} | {self.current_user[2]}",
+                style="TopbarInfo.TLabel",
+            ).pack(side="left", padx=(0, 10))
+            ttk.Button(
+                actions,
+                text="Avisos",
+                command=self.notification_manager.show_notification_center,
+                style="TopbarAction.TButton",
+            ).pack(side="left", padx=(0, 8))
+            ttk.Button(
+                actions,
+                text="Salir",
+                command=self.logout,
+                style="TopbarDanger.TButton",
+            ).pack(side="left")
             
             logger.debug(f"Barra lateral construida con {len(visible_sections)} secciones")
             
@@ -646,8 +667,7 @@ class ERPApp(tk.Tk):
     def _set_active_nav(self, selected_title):
         """Resalta el boton de navegacion activo."""
         for title, widget in self.nav_widgets.items():
-            widget.configure(style="NavAccent.TButton" if title == selected_title else "Nav.TButton")
-
+            widget.configure(style="TopbarNavAccent.TButton" if title == selected_title else "TopbarNav.TButton")
     def open_detached_sales_window(self, title, frame_class):
         """Abre o reutiliza una ventana dedicada para ventas."""
         existing = self._detached_windows.get(title)
@@ -771,10 +791,60 @@ class ERPApp(tk.Tk):
         if frame and hasattr(frame, "focus_product"):
             frame.focus_product(product_id)
 
+    def open_backup_settings(self):
+        """Navega a Configuracion y enfoca la pestaña de respaldos."""
+        title = next(
+            (section for section in self.frames if str(section).lower().startswith("configur")),
+            None,
+        )
+        if not title:
+            return
+
+        self.current_section.set(title)
+        self._set_active_nav(title)
+        self.show_frame(self.frames[title], title)
+
+        frame = getattr(self, "current_frame", None)
+        if frame and hasattr(frame, "focus_backup_tab"):
+            frame.focus_backup_tab()
+
+    def _confirm_session_end_backup(self, *, trigger: str, continue_action_label: str) -> bool:
+        """Ejecuta el respaldo automatico al terminar sesion cuando aplica."""
+        if not self._is_logged_in:
+            return True
+
+        auto_result = None
+        try:
+            auto_result = self.backup_service.run_automatic_backup_if_due(trigger=trigger)
+        except Exception as exc:
+            logger.error(f"Error al ejecutar respaldo automatico de fin de sesion ({trigger}): {exc}")
+            return True
+
+        if auto_result and auto_result.ok:
+            logger.info(f"Respaldo automatico generado al finalizar sesion: {auto_result.file_name}")
+            return True
+
+        if auto_result and not auto_result.ok:
+            return messagebox.askyesno(
+                "Respaldo automatico fallido",
+                (
+                    f"{auto_result.message}\n\n"
+                    f"Desea {continue_action_label} de todos modos sin generar el respaldo automatico?"
+                ),
+                parent=self,
+            )
+
+        return True
+
     def logout(self):
         """Cierra la sesion actual."""
         try:
             if messagebox.askyesno("Cerrar sesion", "Desea cerrar sesion?", parent=self):
+                if not self._confirm_session_end_backup(
+                    trigger="logout",
+                    continue_action_label="cerrar sesion",
+                ):
+                    return
                 logger.info(f"Usuario {self.current_user[1]} cerro sesion")
                 self._is_logged_in = False
                 self._stop_stock_monitoring()
@@ -803,6 +873,12 @@ class ERPApp(tk.Tk):
                 if self._is_logged_in:
                     session_duration = datetime.now() - self._session_start_time
                     logger.info(f"Duracion de sesion: {session_duration}")
+                    if not self._confirm_session_end_backup(
+                        trigger="on_close",
+                        continue_action_label="salir",
+                    ):
+                        self._is_closing = False
+                        return
 
                 self._stop_stock_monitoring()
                 self._close_detached_windows()

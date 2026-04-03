@@ -75,19 +75,16 @@ class RegistroVentasFrame(ttk.Frame):
 
     def _build_ui(self):
         self.columnconfigure(0, weight=1)
-        self.rowconfigure(1, weight=0)
-        self.rowconfigure(2, weight=1)
+        self.rowconfigure(0, weight=0)
+        self.rowconfigure(1, weight=1)
 
-        ttk.Label(self, text="Registro de ventas", style="Header.TLabel").grid(
-            row=0, column=0, sticky="w", pady=(0, 10)
-        )
 
         self.filters_frame = ttk.LabelFrame(self, text="Filtros de consulta", style="Card.TLabelframe")
-        self.filters_frame.grid(row=1, column=0, sticky="ew", pady=(0, 8))
+        self.filters_frame.grid(row=0, column=0, sticky="ew", pady=(0, 8))
         self.filters_frame.columnconfigure(1, weight=1)
 
         self.table_frame = ttk.LabelFrame(self, text="Historial de ventas POS", style="Card.TLabelframe")
-        self.table_frame.grid(row=2, column=0, sticky="nsew")
+        self.table_frame.grid(row=1, column=0, sticky="nsew")
 
         self._build_filters()
         self._build_table()
@@ -616,3 +613,4 @@ class RegistroVentasFrame(ttk.Frame):
             return True
         except ValueError:
             return False
+

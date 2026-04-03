@@ -3,6 +3,7 @@ import unittest
 from receipt_builder import (
     build_receipt_html,
     build_receipt_preview_text,
+    build_receipt_view_model,
     default_receipt_labels,
     load_receipt_labels,
 )
@@ -67,6 +68,27 @@ class ReceiptBuilderTests(unittest.TestCase):
         self.assertIn("<tr><td>TOTAL</td><td>L 45.00</td></tr>", html)
         self.assertNotIn("Sub Total", html)
 
+    def test_receipt_view_model_uses_only_fiscal_summary_rows(self):
+        view_model = build_receipt_view_model(
+            venta_id="V-003",
+            fecha="2026-03-30 15:50:35",
+            metodo_pago="EFECTIVO",
+            items=[
+                {"producto_id": 2, "nombre": "Teclado Mecanico", "cantidad": 1, "precio_unitario": 45.0, "subtotal": 45.0},
+            ],
+            amount_received=50.0,
+            tax_included=True,
+        )
+
+        self.assertEqual(
+            view_model["summary_rows"],
+            [
+                ("Base Gravada 15%", 39.13),
+                ("Impuesto 15%", 5.87),
+                ("TOTAL", 45.0),
+            ],
+        )
+
     def test_receipt_template_and_preview_share_same_labels(self):
         template = """
 <html>
@@ -111,11 +133,11 @@ class ReceiptBuilderTests(unittest.TestCase):
             amount_received=50.0,
         )
 
-        self.assertIn("RECIBO PERSONALIZADO", html)
-        self.assertIn("Recibido cliente: 50.00", html)
+        self.assertIn("FACTURA", html)
+        self.assertIn("Monto recibido: 50.00", html)
         self.assertIn("ERP DEMO", html)
-        self.assertIn("Gracias por volver", preview)
-        self.assertIn("Recibido cliente: 50.00", preview)
+        self.assertIn("Gracias por su compra", preview)
+        self.assertIn("Monto recibido: 50.00", preview)
 
     def test_receipt_template_supports_legacy_items_rows_placeholder(self):
         template = """
@@ -126,7 +148,6 @@ class ReceiptBuilderTests(unittest.TestCase):
             {{ITEMS_ROWS}}
         </tbody>
     </table>
-    <div>Subtotal legacy: {{SUB_TOTAL}}</div>
     <div>Recibido legacy: {{MONTO_RECIBIDO}}</div>
 </body>
 </html>
@@ -146,10 +167,9 @@ class ReceiptBuilderTests(unittest.TestCase):
         )
 
         self.assertIn("<tr><td>1</td><td>00000002</td><td>Teclado Mecanico</td><td>L 45.00</td><td>L 45.00</td></tr>", html)
-        self.assertIn("Subtotal legacy: 39.13", html)
         self.assertIn("Recibido legacy: 50.00", html)
 
-    def test_load_receipt_labels_uses_defaults_when_config_is_missing(self):
+    def test_load_receipt_labels_uses_internal_fixed_defaults(self):
         values = {
             "recibo_doc_title": "FACTURA FISCAL",
             "recibo_label_monto_recibido": "Pago recibido",
@@ -160,8 +180,8 @@ class ReceiptBuilderTests(unittest.TestCase):
 
         labels = load_receipt_labels(get_config)
 
-        self.assertEqual(labels["DOC_TITLE"], "FACTURA FISCAL")
-        self.assertEqual(labels["LABEL_MONTO_RECIBIDO"], "Pago recibido")
+        self.assertEqual(labels["DOC_TITLE"], default_receipt_labels()["DOC_TITLE"])
+        self.assertEqual(labels["LABEL_MONTO_RECIBIDO"], default_receipt_labels()["LABEL_MONTO_RECIBIDO"])
         self.assertEqual(labels["LABEL_VUELTO"], default_receipt_labels()["LABEL_VUELTO"])
 
 

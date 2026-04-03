@@ -48,6 +48,7 @@ class ProductSearchModal:
         self.discount_options = discount_options or ["Sin descuento"]
         self.selected_product = None
         self.product_lookup = {}
+        self._submit_locked = False
 
         # Crear ventana
         self.window = tk.Toplevel(self.owner)
@@ -83,8 +84,8 @@ class ProductSearchModal:
         self._load_products()
 
         # Eventos de teclado
-        self.window.bind("<Escape>", lambda e: self.window.destroy())
-        self.window.bind("<Return>", lambda e: self._add_and_continue())
+        self.window.bind("<Escape>", self._handle_escape)
+        self.window.bind("<Return>", self._handle_submit_key)
 
     def _setup_styles(self):
         """Configura estilos locales del explorador comercial."""
@@ -281,28 +282,12 @@ class ProductSearchModal:
 
         # Eventos del treeview
         self.tree.bind("<<TreeviewSelect>>", self._on_product_selected)
-        self.tree.bind("<Double-1>", lambda e: self._add_and_continue())
-        self.tree.bind("<Return>", lambda e: self._add_and_continue())
+        self.tree.bind("<Double-1>", self._handle_double_click)
 
         # ========== PANEL DE DETALLE ==========
         detail_frame = ttk.LabelFrame(main_frame, text="📊 Detalle del producto", padding="14")
         detail_frame.grid(row=2, column=1, sticky="nsew")
         detail_frame.columnconfigure(0, weight=1)
-
-        # Card de imagen/placeholder
-        self.image_card = ttk.Frame(detail_frame, style="CatalogImage.TFrame", padding=(10, 18))
-        self.image_card.grid(row=0, column=0, sticky="ew")
-        self.image_card.columnconfigure(0, weight=1)
-        
-        self.image_label = ttk.Label(
-            self.image_card, 
-            text="🖼️\nSin imagen\nPreview comercial", 
-            justify="center", 
-            background=PALETTE.get("blue_light", "#e3f2fd"), 
-            foreground=PALETTE.get("blue_dark", "#0056b3"), 
-            font=("Segoe UI Semibold", 12)
-        )
-        self.image_label.grid(row=0, column=0, sticky="nsew")
 
         # Variables de detalle
         self.detail_name_var = tk.StringVar(value="Seleccione un producto")
@@ -314,19 +299,19 @@ class ProductSearchModal:
         self.detail_description_var = tk.StringVar(value="Aquí verás la descripción completa, disponibilidad y contexto comercial del producto.")
 
         # Mostrar información
-        ttk.Label(detail_frame, textvariable=self.detail_name_var, style="CatalogTitle.TLabel", wraplength=380).grid(row=1, column=0, sticky="w", pady=(14, 0))
-        ttk.Label(detail_frame, textvariable=self.detail_price_var, style="CatalogPrice.TLabel").grid(row=2, column=0, sticky="w", pady=(8, 0))
-        ttk.Label(detail_frame, textvariable=self.detail_stock_var, style="CatalogMuted.TLabel").grid(row=3, column=0, sticky="w", pady=(6, 0))
-        ttk.Label(detail_frame, textvariable=self.detail_category_var, style="CatalogMuted.TLabel").grid(row=4, column=0, sticky="w")
-        ttk.Label(detail_frame, textvariable=self.detail_code_var, style="CatalogMuted.TLabel").grid(row=5, column=0, sticky="w")
-        ttk.Label(detail_frame, textvariable=self.detail_status_var, style="CatalogBadge.TLabel").grid(row=6, column=0, sticky="w", pady=(10, 0))
+        ttk.Label(detail_frame, textvariable=self.detail_name_var, style="CatalogTitle.TLabel", wraplength=380).grid(row=0, column=0, sticky="w")
+        ttk.Label(detail_frame, textvariable=self.detail_price_var, style="CatalogPrice.TLabel").grid(row=1, column=0, sticky="w", pady=(8, 0))
+        ttk.Label(detail_frame, textvariable=self.detail_stock_var, style="CatalogMuted.TLabel").grid(row=2, column=0, sticky="w", pady=(6, 0))
+        ttk.Label(detail_frame, textvariable=self.detail_category_var, style="CatalogMuted.TLabel").grid(row=3, column=0, sticky="w")
+        ttk.Label(detail_frame, textvariable=self.detail_code_var, style="CatalogMuted.TLabel").grid(row=4, column=0, sticky="w")
+        ttk.Label(detail_frame, textvariable=self.detail_status_var, style="CatalogBadge.TLabel").grid(row=5, column=0, sticky="w", pady=(10, 0))
         ttk.Label(detail_frame, textvariable=self.detail_description_var, style="CatalogMuted.TLabel", wraplength=380, justify="left").grid(
-            row=7, column=0, sticky="w", pady=(12, 0)
+            row=6, column=0, sticky="w", pady=(12, 0)
         )
 
         # ========== CONFIGURACIÓN DE AGREGADO ==========
         config_frame = ttk.LabelFrame(detail_frame, text="➕ Agregar al carrito", padding="10")
-        config_frame.grid(row=8, column=0, sticky="ew", pady=(16, 0))
+        config_frame.grid(row=7, column=0, sticky="ew", pady=(16, 0))
         config_frame.columnconfigure(1, weight=1)
 
         # Cantidad
@@ -353,7 +338,7 @@ class ProductSearchModal:
 
         # Botones de acción
         btn_frame = ttk.Frame(detail_frame)
-        btn_frame.grid(row=9, column=0, sticky="ew", pady=(16, 0))
+        btn_frame.grid(row=8, column=0, sticky="ew", pady=(16, 0))
         btn_frame.columnconfigure(0, weight=1)
         btn_frame.columnconfigure(1, weight=1)
 
@@ -376,7 +361,7 @@ class ProductSearchModal:
             text="✅ Agregar y cerrar",
             command=self._add_and_close,
             style="Success.TButton"
-        ).grid(row=10, column=0, sticky="ew", pady=(8, 0))
+        ).grid(row=9, column=0, sticky="ew", pady=(8, 0))
 
         # Cargar descuentos
         self._load_discounts()
@@ -544,7 +529,6 @@ class ProductSearchModal:
             self.detail_code_var.set("Código: -")
             self.detail_status_var.set("Disponible para explorar")
             self.detail_description_var.set("Aquí verás la descripción completa, disponibilidad y contexto comercial del producto.")
-            self.image_label.configure(text="🖼️\nSin imagen\nPreview comercial")
             return
 
         # Determinar estado
@@ -563,9 +547,6 @@ class ProductSearchModal:
         self.detail_code_var.set(f"🔢 Código: {product['codigo']}")
         self.detail_status_var.set(status)
         self.detail_description_var.set(product["descripcion"] or "Sin descripción registrada.")
-        
-        # Placeholder de imagen
-        self.image_label.configure(text=f"{product['nombre'][:2].upper()}\n{product['categoria_nombre']}")
 
     def _open_detail_modal(self):
         """Abre modal con detalle completo"""
@@ -635,8 +616,27 @@ class ProductSearchModal:
             wrapper,
             text="➕ Agregar al carrito",
             style="Success.TButton",
-            command=lambda: [self._add_and_continue(), modal.destroy()]
+            command=lambda current_modal=modal: self._add_from_detail_modal(current_modal)
         ).grid(row=6, column=0, sticky="ew", pady=(10, 0))
+
+    def _handle_escape(self, _event=None):
+        self.window.destroy()
+        return "break"
+
+    def _handle_submit_key(self, _event=None):
+        self._add_and_continue()
+        return "break"
+
+    def _handle_double_click(self, _event=None):
+        self._add_and_continue()
+        return "break"
+
+    def _add_from_detail_modal(self, modal):
+        if self._add_and_continue():
+            modal.destroy()
+
+    def _release_submit_lock(self):
+        self._submit_locked = False
 
     def _add_selected(self):
         """Agrega el producto seleccionado"""
@@ -673,10 +673,22 @@ class ProductSearchModal:
 
     def _add_and_continue(self):
         """Agrega producto y mantiene ventana abierta"""
-        if self._add_selected():
-            self.qty_var.set(1)
-            self.discount_combo.set("Sin descuento")
-            self._show_notification("✅ Producto agregado al carrito")
+        if self._submit_locked:
+            return False
+
+        self._submit_locked = True
+        try:
+            if self._add_selected():
+                self.qty_var.set(1)
+                self.discount_combo.set("Sin descuento")
+                self._show_notification("✅ Producto agregado al carrito")
+                return True
+            return False
+        finally:
+            if hasattr(self, "window") and self.window and self.window.winfo_exists():
+                self.window.after_idle(self._release_submit_lock)
+            else:
+                self._release_submit_lock()
 
     def _add_and_close(self):
         """Agrega producto y cierra ventana"""
@@ -730,6 +742,12 @@ class UnifiedPOSFrame(ttk.Frame):
         self.processing_job = None
         self.last_receipt_html = ""
         self.last_sale_result = None
+        self._shortcut_owner = None
+        self.checkout_details_visible = False
+        self.checkout_payment_combo = None
+        self.checkout_amount_entry = None
+        self.checkout_secondary_button = None
+        self.checkout_details_frame = None
         
         # Variables de control
         self.sale_mode_var = tk.StringVar(value=initial_sale_mode)
@@ -757,9 +775,8 @@ class UnifiedPOSFrame(ttk.Frame):
         self.update_cart_display()
         
         # Atajos de teclado
-        self.master.bind("<F1>", lambda e: self.open_product_search())
-        self.master.bind("<F2>", lambda e: self.open_payment_modal())
-        self.master.bind("<F3>", lambda e: self.clear_cart())
+        self._bind_shortcuts()
+        self.bind("<Destroy>", self._on_destroy, add="+")
 
     def _parent_window(self):
         return self.winfo_toplevel()
@@ -775,16 +792,199 @@ class UnifiedPOSFrame(ttk.Frame):
 
     def _ask_yes_no(self, title, text, parent=None):
         return messagebox.askyesno(title, text, parent=parent or self._parent_window())
+
+    def _bind_shortcuts(self):
+        """Registra atajos del POS sobre la ventana real que recibe el foco."""
+        owner = self.winfo_toplevel()
+        self._shortcut_owner = owner
+        owner.bind("<F1>", self._handle_f1_shortcut)
+        owner.bind("<F2>", self._handle_f2_shortcut)
+        owner.bind("<F3>", self._handle_f3_shortcut)
+        owner.bind("<F4>", self._handle_f4_shortcut)
+        owner.bind("<Escape>", self._handle_escape_shortcut)
+        owner.bind("<Return>", self._handle_enter_shortcut)
+        owner.bind("<KP_Enter>", self._handle_enter_shortcut)
+
+    def _unbind_shortcuts(self):
+        owner = getattr(self, "_shortcut_owner", None)
+        if owner is None:
+            return
+        try:
+            if owner.winfo_exists():
+                owner.unbind("<F1>")
+                owner.unbind("<F2>")
+                owner.unbind("<F3>")
+                owner.unbind("<F4>")
+                owner.unbind("<Escape>")
+                owner.unbind("<Return>")
+                owner.unbind("<KP_Enter>")
+        except Exception:
+            pass
+        self._shortcut_owner = None
+
+    def _on_destroy(self, event):
+        if event.widget is self:
+            self._unbind_shortcuts()
+
+    def _handle_f1_shortcut(self, _event=None):
+        if self.checkout_mode.get() != "cart":
+            return "break"
+        self.open_product_search()
+        return "break"
+
+    def _handle_f2_shortcut(self, _event=None):
+        if self.checkout_mode.get() == "payment":
+            self._focus_checkout_payment_method()
+            return "break"
+        if self.checkout_mode.get() != "cart":
+            return "break"
+        self.open_payment_modal()
+        return "break"
+
+    def _handle_f3_shortcut(self, _event=None):
+        if self.checkout_mode.get() == "payment":
+            self._focus_checkout_amount()
+            return "break"
+        if self.checkout_mode.get() != "cart":
+            return "break"
+        self.clear_cart()
+        return "break"
+
+    def _handle_f4_shortcut(self, _event=None):
+        if self.checkout_mode.get() == "payment":
+            self._focus_checkout_secondary()
+        return "break"
+
+    def _editable_widget_focused(self, event=None):
+        widget = getattr(event, "widget", None)
+        if widget is None and hasattr(self, "focus_get"):
+            try:
+                widget = self.focus_get()
+            except Exception:
+                widget = None
+        if widget is None:
+            return False
+        class_name = ""
+        if hasattr(widget, "winfo_class"):
+            try:
+                class_name = str(widget.winfo_class() or "")
+            except Exception:
+                class_name = ""
+        if not class_name:
+            class_name = str(getattr(widget, "widget_class", "") or "")
+        return class_name in {"Entry", "TEntry", "Spinbox", "TSpinbox", "Text", "Combobox", "TCombobox"}
+
+    def _focus_widget(self, widget):
+        if not widget:
+            return False
+        try:
+            widget.focus_set()
+        except Exception:
+            return False
+        if hasattr(widget, "selection_range"):
+            try:
+                widget.selection_range(0, tk.END)
+            except Exception:
+                pass
+        return True
+
+    def _focus_checkout_payment_method(self):
+        return self._focus_widget(getattr(self, "checkout_payment_combo", None))
+
+    def _focus_checkout_amount(self):
+        return self._focus_widget(getattr(self, "checkout_amount_entry", None))
+
+    def _toggle_checkout_details(self):
+        if not getattr(self, "checkout_details_frame", None):
+            return False
+        self.checkout_details_visible = not self.checkout_details_visible
+        if self.checkout_details_visible:
+            self.checkout_details_frame.grid()
+            if getattr(self, "checkout_secondary_button", None):
+                self.checkout_secondary_button.configure(text="Ocultar detalles (F4)")
+        else:
+            self.checkout_details_frame.grid_remove()
+            if getattr(self, "checkout_secondary_button", None):
+                self.checkout_secondary_button.configure(text="Mostrar detalles (F4)")
+        if hasattr(self, "workflow_canvas"):
+            self.workflow_canvas.configure(scrollregion=self.workflow_canvas.bbox("all"))
+        return True
+
+    def _focus_checkout_secondary(self):
+        if not self.checkout_details_visible:
+            self._toggle_checkout_details()
+        return self._focus_widget(getattr(self, "checkout_secondary_button", None))
+
+    def _handle_escape_shortcut(self, _event=None):
+        mode = self.checkout_mode.get()
+        if mode == "payment":
+            self._show_sales_stage()
+            return "break"
+        if mode == "success":
+            self._finish_checkout_success()
+            return "break"
+        if mode == "processing":
+            return "break"
+        return None
+
+    def _handle_enter_shortcut(self, event=None):
+        mode = self.checkout_mode.get()
+        if mode == "payment":
+            self._start_processing_sale()
+            return "break"
+        if mode == "success":
+            self._finish_checkout_success()
+            return "break"
+        if mode != "cart" or self._editable_widget_focused(event):
+            return None
+        if self.cart:
+            self.open_payment_modal()
+        else:
+            self.open_product_search()
+        return "break"
+
+    def _configured_discount_pct(self, discount_type, fallback):
+        options = self.discount_by_type.get(str(discount_type or "").strip().upper(), [])
+        if options:
+            try:
+                return float(options[0].get("porcentaje", fallback) or fallback)
+            except (TypeError, ValueError):
+                return fallback
+        return fallback
+
+    def _apply_automatic_discount(self, item):
+        if item.get("manual"):
+            return
+
+        wholesale = self.sale_mode_var.get() == "ESPECIAL" or self.selected_client_is_wholesale
+        quantity = int(item.get("cantidad", 0) or 0)
+
+        if wholesale:
+            item["descuento_porcentaje"] = self._configured_discount_pct("MAYORISTA", 0.15)
+            item["auto_label"] = "Mayorista" if item["descuento_porcentaje"] > 0 else ""
+            return
+
+        if quantity >= 12:
+            item["descuento_porcentaje"] = self._configured_discount_pct("DOCENA", 0.10)
+            item["auto_label"] = "Docena" if item["descuento_porcentaje"] > 0 else ""
+            return
+
+        item["descuento_porcentaje"] = 0.0
+        item["auto_label"] = ""
     
     def _configure_styles(self):
         """Configura estilos profesionales tipo Microsoft Dynamics"""
         style = ttk.Style()
         
         # Estilos base
-        style.configure("Header.TLabel", font=("Segoe UI", 18, "bold"), foreground=PALETTE.get("black", "#0f172a"))
-        style.configure("Subheader.TLabel", font=("Segoe UI", 11), foreground=PALETTE.get("gray_text", "#475569"))
+        style.configure("Header.TLabel", font=("Segoe UI", 16, "bold"), foreground=PALETTE.get("black", "#0f172a"))
+        style.configure("Subheader.TLabel", font=("Segoe UI", 10), foreground=PALETTE.get("gray_text", "#475569"))
         style.configure("Metric.TLabel", font=("Segoe UI", 10, "bold"), foreground=PALETTE.get("blue_dark", "#1E2A44"))
-        style.configure("MetricValue.TLabel", font=("Segoe UI", 24, "bold"), foreground=PALETTE.get("blue_dark", "#1E2A44"))
+        style.configure("MetricValue.TLabel", font=("Segoe UI", 22, "bold"), foreground=PALETTE.get("blue_dark", "#1E2A44"))
+        style.configure("POSHeaderTitle.TLabel", font=("Segoe UI", 14, "bold"), foreground=PALETTE.get("black", "#0f172a"))
+        style.configure("POSHeaderMeta.TLabel", font=("Segoe UI", 9), foreground=PALETTE.get("gray_text", "#475569"))
+        style.configure("POSHeaderTotalLabel.TLabel", font=("Segoe UI", 9, "bold"), foreground=PALETTE.get("gray_text", "#475569"))
+        style.configure("POSHeaderTotalValue.TLabel", font=("Segoe UI", 28, "bold"), foreground=PALETTE.get("blue_dark", "#1E2A44"))
         style.configure("Card.TLabelframe", relief="solid", borderwidth=1, padding=10)
         style.configure("Card.TLabelframe.Label", font=("Segoe UI", 10, "bold"), foreground=PALETTE.get("blue_dark", "#1E2A44"))
         
@@ -798,33 +998,31 @@ class UnifiedPOSFrame(ttk.Frame):
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
         
-        # Header profesional
-        header = ttk.Frame(self, padding="15")
-        header.grid(row=0, column=0, sticky="ew", pady=(0, 10))
-        header.grid_columnconfigure(1, weight=1)
-        
-        # Título y estado
+        # Header compacto
+        header = ttk.Frame(self, padding=(0, 0, 0, 8))
+        header.grid(row=0, column=0, sticky="ew")
+        header.grid_columnconfigure(0, weight=1)
+        header.grid_columnconfigure(1, weight=0)
+
         title_frame = ttk.Frame(header)
         title_frame.grid(row=0, column=0, sticky="w")
         
         ttk.Label(
             title_frame,
-            text="🏪 PUNTO DE VENTA PROFESIONAL",
-            style="Header.TLabel"
+            text="Punto de venta",
+            style="POSHeaderTitle.TLabel"
         ).pack(anchor="w")
-        
+
         ttk.Label(
             title_frame,
-            textvariable=self.status_var,
-            style="Subheader.TLabel"
-        ).pack(anchor="w", pady=(5, 0))
-        
-        # Métricas rápidas
-        metrics = ttk.Frame(header)
-        metrics.grid(row=0, column=2, sticky="e")
-        
-        self._create_metric_card(metrics, "Total carrito", self.total_display_var, 0)
-        self._create_metric_card(metrics, "Items", self.cart_items_var, 1)
+            textvariable=self.cart_items_var,
+            style="POSHeaderMeta.TLabel"
+        ).pack(anchor="w", pady=(2, 0))
+
+        total_frame = ttk.Frame(header, padding=(12, 0, 0, 0))
+        total_frame.grid(row=0, column=1, sticky="e")
+        ttk.Label(total_frame, text="TOTAL", style="POSHeaderTotalLabel.TLabel").pack(anchor="e")
+        ttk.Label(total_frame, textvariable=self.total_display_var, style="POSHeaderTotalValue.TLabel").pack(anchor="e")
         
         # Contenedor principal de etapas
         self.stage_container = ttk.Frame(self)
@@ -875,7 +1073,7 @@ class UnifiedPOSFrame(ttk.Frame):
         
         ttk.Button(
             quick_actions,
-            text="💳 Cobrar (F2)",
+            text="Siguiente (F2)",
             command=self.open_payment_modal,
             style="Success.TButton"
         ).pack(side="left", padx=5)
@@ -887,23 +1085,22 @@ class UnifiedPOSFrame(ttk.Frame):
             style="Danger.TButton"
         ).pack(side="left", padx=5)
 
-        # Vista workflow de pago/confirmación/éxito
+        # Vista workflow de cobro/finalización
         self.checkout_stage = ttk.Frame(self.stage_container, padding=(0, 6, 0, 0))
         self.checkout_stage.grid(row=0, column=0, sticky="nsew")
         self.checkout_stage.grid_columnconfigure(0, weight=1)
         self.checkout_stage.grid_rowconfigure(1, weight=1)
 
-        self.workflow_title_var = tk.StringVar(value="Workflow de Venta")
-        self.workflow_subtitle_var = tk.StringVar(value="Completa el cobro y confirma la venta sin perder visibilidad.")
-        self.workflow_status_var = tk.StringVar(value="Paso 1 de 4")
-        self.workflow_step_labels = ("Productos", "Pago", "Confirmación", "Recibo")
+        self.workflow_title_var = tk.StringVar(value="Cobro de la venta")
+        self.workflow_subtitle_var = tk.StringVar(value="Completa el cobro y cierra la venta sin pasos redundantes.")
+        self.workflow_status_var = tk.StringVar(value="Paso 1 de 2")
+        self.workflow_step_labels = ("Cobro", "Finalización")
 
-        workflow_header = ttk.Frame(self.checkout_stage, padding=(6, 0, 6, 12))
+        workflow_header = ttk.Frame(self.checkout_stage, padding=(4, 0, 4, 8))
         workflow_header.grid(row=0, column=0, sticky="ew")
         workflow_header.columnconfigure(0, weight=1)
         ttk.Label(workflow_header, textvariable=self.workflow_title_var, style="Header.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Label(workflow_header, textvariable=self.workflow_subtitle_var, style="Subheader.TLabel").grid(row=1, column=0, sticky="w", pady=(4, 0))
-        ttk.Label(workflow_header, textvariable=self.workflow_status_var, style="Metric.TLabel").grid(row=0, column=1, rowspan=2, sticky="e")
+        ttk.Label(workflow_header, textvariable=self.workflow_status_var, style="Metric.TLabel").grid(row=0, column=1, sticky="e")
 
         self.progress_holder = ttk.Frame(self.checkout_stage)
         self.progress_holder.grid(row=1, column=0, sticky="nsew")
@@ -911,8 +1108,8 @@ class UnifiedPOSFrame(ttk.Frame):
         self.progress_holder.grid_rowconfigure(1, weight=1)
 
         self.step_indicator_frame = ttk.Frame(self.progress_holder)
-        self.step_indicator_frame.grid(row=0, column=0, sticky="ew", pady=(0, 10))
-        for idx in range(4):
+        self.step_indicator_frame.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        for idx in range(len(self.workflow_step_labels)):
             self.step_indicator_frame.columnconfigure(idx, weight=1)
         self.step_indicator_labels = []
         for idx, label in enumerate(self.workflow_step_labels):
@@ -923,6 +1120,10 @@ class UnifiedPOSFrame(ttk.Frame):
 
         self.workflow_progress = ttk.Progressbar(self.progress_holder, mode="determinate", maximum=100)
         self.workflow_progress.grid(row=2, column=0, sticky="ew", pady=(0, 10))
+
+        self.workflow_footer = ttk.Frame(self.progress_holder)
+        self.workflow_footer.grid(row=3, column=0, sticky="ew")
+        self.workflow_footer.grid_columnconfigure(0, weight=1)
 
         workflow_body_shell = ttk.Frame(self.progress_holder)
         workflow_body_shell.grid(row=1, column=0, sticky="nsew")
@@ -953,14 +1154,6 @@ class UnifiedPOSFrame(ttk.Frame):
         self.workflow_canvas.bind("<MouseWheel>", self._on_workflow_mousewheel)
         self.checkout_stage.grid_remove()
     
-    def _create_metric_card(self, parent, label, variable, column):
-        """Crea tarjeta de métrica"""
-        card = ttk.Frame(parent, relief="solid", borderwidth=1, padding="10")
-        card.grid(row=0, column=column, padx=5)
-        
-        ttk.Label(card, text=label, style="Metric.TLabel").pack()
-        ttk.Label(card, textvariable=variable, style="MetricValue.TLabel").pack()
-
     def _on_workflow_mousewheel(self, event):
         delta = -1 * int(event.delta / 120) if event.delta else 0
         if delta:
@@ -991,14 +1184,40 @@ class UnifiedPOSFrame(ttk.Frame):
         for child in self.workflow_content.winfo_children():
             child.destroy()
         self.workflow_canvas.yview_moveto(0)
+        self.checkout_payment_combo = None
+        self.checkout_amount_entry = None
+        self.checkout_secondary_button = None
+        self.checkout_details_frame = None
+
+    def _clear_workflow_footer(self):
+        for child in self.workflow_footer.winfo_children():
+            child.destroy()
+
+    def _render_workflow_footer(self, actions):
+        self._clear_workflow_footer()
+        shell = ttk.Frame(self.workflow_footer)
+        shell.grid(row=0, column=0, sticky="ew", pady=(4, 0))
+        shell.grid_columnconfigure(0, weight=1)
+
+        left = ttk.Frame(shell)
+        left.grid(row=0, column=0, sticky="w")
+        right = ttk.Frame(shell)
+        right.grid(row=0, column=1, sticky="e")
+
+        for side, label, command, style in actions:
+            target = left if side == "left" else right
+            kwargs = {"text": label, "command": command}
+            if style:
+                kwargs["style"] = style
+            ttk.Button(target, **kwargs).pack(side="left", padx=(0, 8))
 
     def _render_workflow_payment_step(self):
         self.checkout_mode.set("payment")
         self._show_checkout_stage()
         self._set_workflow_step(
-            2,
-            "Cobro de la venta",
-            "Revisa el resumen, completa los datos de pago y avanza a la confirmación.",
+            1,
+            "Cobro y cierre",
+            "Revisa el resumen, completa el pago y procesa la venta desde esta misma pantalla.",
         )
         self._clear_workflow_content()
         self.pending_sale = self._build_sale_snapshot()
@@ -1007,6 +1226,7 @@ class UnifiedPOSFrame(ttk.Frame):
         shell.grid(row=0, column=0, sticky="nsew")
         shell.columnconfigure(0, weight=3)
         shell.columnconfigure(1, weight=2)
+        shell.rowconfigure(0, weight=1)
 
         sale_card = ttk.LabelFrame(shell, text="Resumen de productos", style="Card.TLabelframe")
         sale_card.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
@@ -1034,8 +1254,13 @@ class UnifiedPOSFrame(ttk.Frame):
             subtotal = float(item["precio_unitario"]) * int(item["cantidad"]) * (1 - pct)
             tree.insert("", "end", values=(item["nombre"], int(item["cantidad"]), format_hnl(item["precio_unitario"]), f"{int(round(pct * 100))}%" if pct else "-", format_hnl(subtotal)))
 
-        summary = ttk.LabelFrame(shell, text="Cobro y totales", style="Card.TLabelframe")
-        summary.grid(row=0, column=1, sticky="nsew")
+        right_column = ttk.Frame(shell)
+        right_column.grid(row=0, column=1, sticky="nsew")
+        right_column.columnconfigure(0, weight=1)
+        right_column.rowconfigure(1, weight=1)
+
+        summary = ttk.LabelFrame(right_column, text="Cobro y totales", style="Card.TLabelframe")
+        summary.grid(row=0, column=0, sticky="ew")
         summary.columnconfigure(1, weight=1)
 
         client_text = self.client_var.get() or "Cliente General"
@@ -1049,117 +1274,94 @@ class UnifiedPOSFrame(ttk.Frame):
         ttk.Label(summary, text=self.total_display_var.get(), style="MetricValue.TLabel").grid(row=2, column=1, sticky="w", pady=4)
 
         ttk.Label(summary, text="Método de pago").grid(row=3, column=0, sticky="w", pady=(12, 4))
-        payment_combo = ttk.Combobox(
+        self.checkout_payment_combo = ttk.Combobox(
             summary,
             textvariable=self.payment_method_var,
             values=("EFECTIVO", "TARJETA", "TRANSFERENCIA", "CREDITO"),
             state="readonly",
         )
-        payment_combo.grid(row=3, column=1, sticky="ew", pady=(12, 4))
+        self.checkout_payment_combo.grid(row=3, column=1, sticky="ew", pady=(12, 4))
 
         ttk.Label(summary, text="Monto recibido").grid(row=4, column=0, sticky="w", pady=4)
-        amount_entry = ttk.Entry(summary, textvariable=self.monto_pagado_var, font=("Segoe UI", 12))
-        amount_entry.grid(row=4, column=1, sticky="ew", pady=4)
-        amount_entry.bind("<KeyRelease>", self.calculate_change)
+        self.checkout_amount_entry = ttk.Entry(summary, textvariable=self.monto_pagado_var, font=("Segoe UI", 12))
+        self.checkout_amount_entry.grid(row=4, column=1, sticky="ew", pady=4)
+        self.checkout_amount_entry.bind("<KeyRelease>", self.calculate_change)
 
         ttk.Label(summary, text="Vuelto").grid(row=5, column=0, sticky="w", pady=4)
         ttk.Label(summary, textvariable=self.vuelto_display_var, style="MetricValue.TLabel").grid(row=5, column=1, sticky="w", pady=4)
 
-        preview_model = self._build_preview_model(self.pending_sale)
-        summary_rows = preview_model["summary_rows"]
-        ttk.Separator(summary, orient="horizontal").grid(row=6, column=0, columnspan=2, sticky="ew", pady=10)
-        for idx, (label, value) in enumerate(summary_rows, start=7):
-            ttk.Label(summary, text=label).grid(row=idx, column=0, sticky="w", pady=2)
-            ttk.Label(summary, text=format_hnl(value)).grid(row=idx, column=1, sticky="e", pady=2)
+        ttk.Label(
+            summary,
+            text="F2 método | F3 monto | F4 detalles | Enter procesar | Esc volver",
+            style="Subheader.TLabel",
+            wraplength=280,
+        ).grid(row=6, column=0, columnspan=2, sticky="w", pady=(10, 4))
 
-        actions = ttk.Frame(self.workflow_content)
-        actions.grid(row=1, column=0, sticky="ew", pady=(14, 0))
-        ttk.Button(actions, text="← Volver al carrito", style="Danger.TButton", command=self._show_sales_stage).pack(side="left")
-        ttk.Button(actions, text="Cancelar venta", command=self._close_preview_window).pack(side="left", padx=(8, 0))
-        ttk.Button(actions, text="Continuar a confirmación →", style="Success.TButton", command=self._go_to_confirmation_step).pack(side="right")
+        self.checkout_secondary_button = ttk.Button(
+            summary,
+            text="Mostrar detalles (F4)" if not self.checkout_details_visible else "Ocultar detalles (F4)",
+            command=self._toggle_checkout_details,
+        )
+        self.checkout_secondary_button.grid(row=7, column=0, columnspan=2, sticky="ew", pady=(4, 0))
 
-    def _go_to_confirmation_step(self):
+        self.checkout_details_frame = ttk.LabelFrame(
+            right_column,
+            text="Detalles secundarios",
+            style="Card.TLabelframe",
+        )
+        self.checkout_details_frame.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
+        self.checkout_details_frame.columnconfigure(0, weight=1)
+        self.checkout_details_frame.rowconfigure(0, weight=1)
+        preview_frame = ttk.Frame(self.checkout_details_frame)
+        preview_frame.grid(row=0, column=0, sticky="nsew")
+        preview_frame.columnconfigure(0, weight=1)
+        self._render_receipt_preview(preview_frame, self.pending_sale)
+        if not self.checkout_details_visible:
+            self.checkout_details_frame.grid_remove()
+
+        self._render_workflow_footer(
+            [
+                ("left", "Volver al carrito (Esc)", self._show_sales_stage, "Danger.TButton"),
+                ("left", "Cancelar venta", self._close_preview_window, None),
+                ("right", "Procesar venta (Enter)", self._start_processing_sale, "Success.TButton"),
+            ]
+        )
+        self.after_idle(self._focus_checkout_amount)
+
+    def _validate_checkout_payment(self):
         total = self.total_var.get()
         pagado = self._parse_float(self.monto_pagado_var.get())
         if total <= 0:
             self._show_warning("Advertencia", "Total inválido")
-            return
+            return False
         if pagado < total:
             self._show_warning("Pago incompleto", f"Faltan L {total - pagado:,.2f}")
+            return False
+        return True
+
+    def _go_to_confirmation_step(self):
+        if not self._validate_checkout_payment():
             return
         self.pending_sale = self._build_sale_snapshot()
-        self._render_confirmation_step()
+        self._start_processing_sale()
 
     def _render_confirmation_step(self):
-        self.checkout_mode.set("confirmation")
-        self._show_checkout_stage()
-        self._set_workflow_step(
-            3,
-            "Confirmación final",
-            "Verifica el recibo, los totales y confirma la venta cuando todo esté correcto.",
-        )
-        self._clear_workflow_content()
-
-        shell = ttk.Frame(self.workflow_content)
-        shell.grid(row=0, column=0, sticky="nsew")
-        shell.columnconfigure(0, weight=3)
-        shell.columnconfigure(1, weight=2)
-
-        sale_card = ttk.LabelFrame(shell, text="Resumen de compra", style="Card.TLabelframe")
-        sale_card.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
-        sale_card.columnconfigure(0, weight=1)
-        sale_card.rowconfigure(0, weight=1)
-
-        columns = ("producto", "cantidad", "precio", "desc", "subtotal")
-        tree = ttk.Treeview(sale_card, columns=columns, show="headings", height=12)
-        for col, text, width, anchor in (
-            ("producto", "Producto", 260, "w"),
-            ("cantidad", "Cant.", 70, "center"),
-            ("precio", "Precio", 90, "e"),
-            ("desc", "Desc.", 70, "center"),
-            ("subtotal", "Subtotal", 110, "e"),
-        ):
-            tree.heading(col, text=text)
-            tree.column(col, width=width, anchor=anchor)
-        y_scroll = ttk.Scrollbar(sale_card, orient="vertical", command=tree.yview)
-        tree.configure(yscrollcommand=y_scroll.set)
-        tree.grid(row=0, column=0, sticky="nsew")
-        y_scroll.grid(row=0, column=1, sticky="ns")
-
-        for item in self.pending_sale["cart_snapshot"].values():
-            pct = float(item.get("descuento_porcentaje", 0))
-            subtotal = float(item["precio_unitario"]) * int(item["cantidad"]) * (1 - pct)
-            tree.insert("", "end", values=(item["nombre"], int(item["cantidad"]), format_hnl(item["precio_unitario"]), f"{int(round(pct * 100))}%" if pct else "-", format_hnl(subtotal)))
-
-        meta = ttk.Frame(sale_card)
-        meta.grid(row=1, column=0, sticky="ew", pady=(10, 0))
-        ttk.Label(meta, text=f"Cliente: {self.client_var.get()}", style="Metric.TLabel").pack(anchor="w")
-        ttk.Label(meta, text=f"Método: {self.payment_method_var.get()} | Recibido: {format_hnl(self.pending_sale['pagado'])} | Vuelto: {format_hnl(self.pending_sale['vuelto'])}").pack(anchor="w", pady=(4, 0))
-
-        preview_card = ttk.LabelFrame(shell, text="Vista previa del recibo", style="Card.TLabelframe")
-        preview_card.grid(row=0, column=1, sticky="nsew")
-        preview_card.columnconfigure(0, weight=1)
-        preview_card.rowconfigure(0, weight=1)
-        preview_frame = ttk.Frame(preview_card)
-        preview_frame.grid(row=0, column=0, sticky="nsew")
-        preview_frame.columnconfigure(0, weight=1)
-        self._render_receipt_preview(preview_frame, self.pending_sale)
-
-        actions = ttk.Frame(self.workflow_content)
-        actions.grid(row=1, column=0, sticky="ew", pady=(14, 0))
-        ttk.Button(actions, text="← Volver a pago", style="Danger.TButton", command=self._render_workflow_payment_step).pack(side="left")
-        ttk.Button(actions, text="Cancelar", command=self._close_preview_window).pack(side="left", padx=(8, 0))
-        ttk.Button(actions, text="Procesar venta", style="Success.TButton", command=self._start_processing_sale).pack(side="right")
+        """Compatibilidad: la confirmación se integró al paso de cobro."""
+        self._render_workflow_payment_step()
 
     def _start_processing_sale(self):
+        if not self._validate_checkout_payment():
+            return
+        self.pending_sale = self._build_sale_snapshot()
         self.checkout_mode.set("processing")
         self._show_checkout_stage()
         self._set_workflow_step(
-            4,
+            2,
             "Procesando venta",
             "Estamos guardando la venta, actualizando inventario y generando el recibo.",
         )
         self._clear_workflow_content()
+        self._clear_workflow_footer()
         self.workflow_progress.configure(mode="indeterminate")
         self.workflow_progress.start(12)
 
@@ -1173,26 +1375,11 @@ class UnifiedPOSFrame(ttk.Frame):
         self.processing_job = self.after(350, lambda p=progress: self._complete_sale_processing(p))
 
     def _render_success_step(self, result):
-        self.checkout_mode.set("success")
-        self._show_checkout_stage()
-        self._set_workflow_step(
-            4,
-            "Venta completada",
-            "La venta se guardó correctamente y el recibo ya está disponible.",
-        )
-        self.workflow_progress.configure(mode="determinate", value=100)
         self._clear_workflow_content()
-
-        card = ttk.LabelFrame(self.workflow_content, text="Éxito", style="Card.TLabelframe", padding=24)
-        card.grid(row=0, column=0, sticky="ew")
-        ttk.Label(card, text="✓ Venta autoguardada correctamente", style="Header.TLabel").pack(anchor="center")
-        ttk.Label(card, text=f"Venta #{result.sale_id} | Total {format_hnl(result.total)}", style="Subheader.TLabel").pack(anchor="center", pady=(8, 6))
-        ttk.Label(card, text="Inventario actualizado, recibo generado y flujo completado con éxito.", style="Subheader.TLabel").pack(anchor="center")
-
-        actions = ttk.Frame(self.workflow_content)
-        actions.grid(row=1, column=0, sticky="ew", pady=(16, 0))
-        ttk.Button(actions, text="Abrir recibo otra vez", command=lambda: self.last_receipt_html and self.print_receipt(self.last_receipt_html)).pack(side="left")
-        ttk.Button(actions, text="Nueva venta", style="Success.TButton", command=self._finish_checkout_success).pack(side="right")
+        self._clear_workflow_footer()
+        self.workflow_progress.configure(mode="determinate", value=100)
+        self.last_sale_result = result
+        self._finish_checkout_success()
 
     def _finish_checkout_success(self):
         self.pending_sale = None
@@ -1324,14 +1511,6 @@ class UnifiedPOSFrame(ttk.Frame):
             foreground=PALETTE.get("success", "#28a745")
         ).pack(anchor="w", pady=(5, 0))
         
-        # Botón finalizar
-        ttk.Button(
-            payment_frame,
-            text="✅ FINALIZAR VENTA",
-            command=self.open_payment_modal,
-            style="Success.TButton"
-        ).pack(fill="x", pady=(10, 0))
-    
     def open_product_search(self):
         """Abre ventana modal de búsqueda de productos"""
         if not self.product_index:
@@ -1375,6 +1554,7 @@ class UnifiedPOSFrame(ttk.Frame):
                 self.cart[product_id]["descuento_porcentaje"] = discount_pct
                 self.cart[product_id]["manual"] = True
                 self.cart[product_id]["manual_label"] = discount_name
+                self.cart[product_id]["auto_label"] = ""
         else:
             self.cart[product_id] = {
                 "producto_id": product_id,
@@ -1386,6 +1566,8 @@ class UnifiedPOSFrame(ttk.Frame):
                 "manual_label": discount_name if discount_pct > 0 else "",
                 "auto_label": ""
             }
+
+        self._apply_automatic_discount(self.cart[product_id])
         
         self.update_cart_display()
         self.status_var.set(f"✅ {quantity}x {product['nombre']} agregado al carrito")
@@ -1413,6 +1595,8 @@ class UnifiedPOSFrame(ttk.Frame):
                 desc_text = f"{int(pct*100)}%"
                 if item.get("manual"):
                     desc_text += " (M)"
+                elif item.get("auto_label"):
+                    desc_text += f" ({item['auto_label']})"
             else:
                 desc_text = "-"
             
@@ -1609,7 +1793,7 @@ class UnifiedPOSFrame(ttk.Frame):
 
     def _open_checkout_summary(self):
         self.pending_sale = self._build_sale_snapshot()
-        self._render_confirmation_step()
+        self._render_workflow_payment_step()
 
     def open_payment_modal(self):
         """Abre el paso interno de cobro"""
@@ -1770,17 +1954,7 @@ class UnifiedPOSFrame(ttk.Frame):
         # Recalcular descuentos
         for prod_id in self.cart:
             item = self.cart[prod_id]
-            if not item.get("manual"):
-                qty = item["cantidad"]
-                if wholesale and qty >= 12:
-                    item["descuento_porcentaje"] = 0.15  # 15% mayorista
-                    item["auto_label"] = "Mayorista"
-                elif qty >= 12:
-                    item["descuento_porcentaje"] = 0.10  # 10% por docena
-                    item["auto_label"] = "Docena"
-                else:
-                    item["descuento_porcentaje"] = 0.0
-                    item["auto_label"] = ""
+            self._apply_automatic_discount(item)
         
         self.update_cart_display()
         self.status_var.set(f"Modo: {'Mayorista' if wholesale else 'Normal'}")
@@ -1790,11 +1964,8 @@ class UnifiedPOSFrame(ttk.Frame):
         if not self.cart:
             self._close_preview_window()
             return
-        if self.checkout_mode.get() == "payment":
+        if self.checkout_mode.get() in {"payment", "confirmation"}:
             self._render_workflow_payment_step()
-        elif self.checkout_mode.get() == "confirmation":
-            self.pending_sale = self._build_sale_snapshot()
-            self._render_confirmation_step()
 
     def _close_preview_window(self):
         """Sale del workflow interno y vuelve al carrito sin destruir el estado base del POS."""

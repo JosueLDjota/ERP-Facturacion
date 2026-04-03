@@ -6,6 +6,7 @@ from pathlib import Path
 from database import DBManager
 from erp.domain.services.access_control import (
     allowed_sections_for_role,
+    can_manage_backups,
     can_manage_legacy_registry,
 )
 
@@ -132,6 +133,7 @@ class AccessControlTests(unittest.TestCase):
         self.assertIn("Configuración", sections)
         self.assertIn("Productos", sections)
         self.assertTrue(can_manage_legacy_registry("Administrador"))
+        self.assertTrue(can_manage_backups("Administrador"))
 
     def test_sales_role_keeps_pos_access_but_not_legacy_cleanup(self):
         sections = allowed_sections_for_role("Vendedor")
@@ -139,6 +141,7 @@ class AccessControlTests(unittest.TestCase):
         self.assertIn("Ventas Mayoristas", sections)
         self.assertNotIn("Configuración", sections)
         self.assertFalse(can_manage_legacy_registry("Vendedor"))
+        self.assertFalse(can_manage_backups("Vendedor"))
 
 
 if __name__ == "__main__":

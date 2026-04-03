@@ -55,6 +55,50 @@ class InvoiceCalculatorTests(unittest.TestCase):
         self.assertEqual(totals.total, 45.0)
         self.assertEqual(totals.vuelto, 5.0)
 
+    def test_tax_included_discounted_line_keeps_visible_total_without_validation_errors(self):
+        totals = calculate_invoice_totals(
+            items=[
+                {
+                    "producto_id": 163,
+                    "nombre": "Accesorios Acer Base Laptop 8439",
+                    "cantidad": 1,
+                    "precio_unitario": 2406.82,
+                    "descuento_porcentaje": 0.15,
+                    "tax_rate": 0.15,
+                },
+            ],
+            tax_included=True,
+            payment_method="EFECTIVO",
+            amount_received=2045.80,
+        )
+
+        self.assertEqual(totals.base_gravada_15, 1778.96)
+        self.assertEqual(totals.impuesto_15, 266.84)
+        self.assertEqual(totals.total, 2045.8)
+        self.assertEqual(totals.lineas[0].subtotal_linea, 2045.8)
+        self.assertEqual(totals.validation_errors, [])
+
+    def test_tax_exempt_line_is_not_double_counted(self):
+        totals = calculate_invoice_totals(
+            items=[
+                {
+                    "producto_id": 5,
+                    "nombre": "Servicio Exento",
+                    "cantidad": 1,
+                    "precio_unitario": 100.0,
+                    "tax_exempt": True,
+                },
+            ],
+            tax_included=True,
+            payment_method="EFECTIVO",
+            amount_received=100.0,
+        )
+
+        self.assertEqual(totals.exento, 100.0)
+        self.assertEqual(totals.total, 100.0)
+        self.assertEqual(totals.lineas[0].subtotal_base, 100.0)
+        self.assertEqual(totals.validation_errors, [])
+
     def test_flags_insufficient_cash_payment(self):
         totals = calculate_invoice_totals(
             items=[

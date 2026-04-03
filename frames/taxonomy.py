@@ -79,7 +79,12 @@ class _TaxonomyCrudPanel(ttk.Frame):
 
         actions = ttk.Frame(list_frame, style="Surface.TFrame")
         actions.grid(row=2, column=0, sticky="ew", pady=(10, 0))
-        ttk.Button(actions, text=f"Nueva {self.singular_label.lower()}", style="Secondary.TButton", command=self.reset_form).pack(
+        ttk.Button(
+            actions,
+            text=f"Nueva {self.singular_label.lower()}",
+            style="Secondary.TButton",
+            command=self.start_new_record,
+        ).pack(
             side="left", padx=(0, 6)
         )
         ttk.Button(actions, text="Eliminar", style="Danger.TButton", command=self.delete_record).pack(side="left")
@@ -94,7 +99,8 @@ class _TaxonomyCrudPanel(ttk.Frame):
         ttk.Label(form_frame, text="Nombre:", style="FormLabel.TLabel").grid(
             row=1, column=0, sticky="w", padx=4, pady=7
         )
-        ttk.Entry(form_frame, textvariable=self.name_var).grid(
+        self.name_entry = ttk.Entry(form_frame, textvariable=self.name_var)
+        self.name_entry.grid(
             row=1, column=1, sticky="ew", padx=4, pady=7
         )
 
@@ -200,6 +206,11 @@ class _TaxonomyCrudPanel(ttk.Frame):
         for item in self.tree.selection():
             self.tree.selection_remove(item)
 
+    def start_new_record(self):
+        self.reset_form()
+        self.tree.focus("")
+        self.name_entry.focus_set()
+
     def save_record(self):
         name = self.name_var.get().strip()
         description = self.description_text.get("1.0", tk.END).strip() or None
@@ -216,7 +227,7 @@ class _TaxonomyCrudPanel(ttk.Frame):
                 )
                 if self.db.last_error:
                     raise self.db.last_error
-                self._show_info("Exito", f"{self.singular_label} actualizada correctamente.")
+                self._show_info("Éxito", f"{self.singular_label} actualizada correctamente.")
             else:
                 self.db.execute(
                     f"INSERT INTO {self.table_name} (nombre, descripcion) VALUES (?, ?)",
@@ -224,7 +235,7 @@ class _TaxonomyCrudPanel(ttk.Frame):
                 )
                 if self.db.last_error:
                     raise self.db.last_error
-                self._show_info("Exito", f"{self.singular_label} agregada correctamente.")
+                self._show_info("Éxito", f"{self.singular_label} agregada correctamente.")
         except sqlite3.IntegrityError as exc:
             if "UNIQUE constraint failed" in str(exc):
                 self._show_error("Duplicado", f"Ya existe una {self.singular_label.lower()} con ese nombre.")
@@ -245,7 +256,7 @@ class _TaxonomyCrudPanel(ttk.Frame):
         if int(related_count or 0) > 0:
             self._show_warning(
                 "En uso",
-                f"No puede eliminar \"{name}\" porque ya esta asociada a {related_count} producto(s).",
+                f"No puede eliminar \"{name}\" porque ya está asociada a {related_count} producto(s).",
             )
             return
 
@@ -260,13 +271,13 @@ class _TaxonomyCrudPanel(ttk.Frame):
             self._show_error("Error", f"No se pudo eliminar la {self.singular_label.lower()}: {self.db.last_error}")
             return
 
-        self._show_info("Exito", f"{self.singular_label} eliminada correctamente.")
+        self._show_info("Éxito", f"{self.singular_label} eliminada correctamente.")
         self.load_records()
         self.reset_form()
 
 
 class CatalogTaxonomyFrame(ttk.Frame):
-    """Modulo de gestion para categorias y marcas del catalogo."""
+    """Módulo de gestión para categorías y marcas del catálogo."""
 
     def __init__(self, parent, app):
         super().__init__(parent, style="App.TFrame")
